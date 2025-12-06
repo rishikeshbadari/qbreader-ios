@@ -40,7 +40,7 @@ export function AnswerInput({
         placeholder="Buzz in with your answer"
         placeholderTextColor={mutedColor}
         style={[styles.input, { color: inputTextColor }]}
-        autoCapitalize="none"
+        autoCapitalize="sentences"
         autoCorrect={false}
         onSubmitEditing={handleSubmit}
         editable={!disabled}

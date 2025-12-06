@@ -1,4 +1,4 @@
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 
 import { ThemedText } from '@/components/ThemedText';
@@ -35,6 +35,7 @@ export function QuestionCard({
   const [displayedQuestion, setDisplayedQuestion] = useState('');
   const animationTimeout = useRef<NodeJS.Timeout | null>(null);
   const buzzedRef = useRef(isBuzzed);
+  const questionScrollRef = useRef<ScrollView | null>(null);
   const shouldAnimateQuestion =
     Boolean(tossup?.question) && !isLoading && !error && !showAnswer;
 
@@ -99,6 +100,18 @@ export function QuestionCard({
     };
   }, [tossup?.id, tossup?.question, isLoading, error, showAnswer]);
 
+  useEffect(() => {
+    if (!questionScrollRef.current) {
+      return;
+    }
+
+    if (shouldAnimateQuestion) {
+      questionScrollRef.current.scrollToEnd({ animated: true });
+    } else {
+      questionScrollRef.current.scrollTo({ y: 0, animated: false });
+    }
+  }, [displayedQuestion, shouldAnimateQuestion]);
+
   const metaChips = [
     tossup?.category,
     tossup?.subcategory,
@@ -139,12 +152,18 @@ export function QuestionCard({
             {error}
           </ThemedText>
         ) : (
-          <ThemedText style={styles.questionBody}>
-            {shouldAnimateQuestion
-              ? displayedQuestion || '…'
-              : tossup?.question ??
-                'Tap “Next Tossup” to start practicing with a random clue.'}
-          </ThemedText>
+          <ScrollView
+            ref={questionScrollRef}
+            style={styles.questionScroll}
+            contentContainerStyle={styles.questionScrollContent}
+            showsVerticalScrollIndicator={false}>
+            <ThemedText style={styles.questionBody}>
+              {shouldAnimateQuestion
+                ? displayedQuestion || '…'
+                : tossup?.question ??
+                  'Tap “Next Tossup” to start practicing with a random clue.'}
+            </ThemedText>
+          </ScrollView>
         )}
       </View>
       {showAnswer && (
@@ -209,8 +228,13 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   questionBlock: {
-    minHeight: 120,
-    justifyContent: 'center',
+    height: 300,
+  },
+  questionScroll: {
+    flex: 1,
+  },
+  questionScrollContent: {
+    paddingRight: 6,
   },
   questionBody: {
     fontSize: 17,

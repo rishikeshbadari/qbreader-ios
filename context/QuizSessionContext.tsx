@@ -10,6 +10,7 @@ import {
 } from 'react';
 
 import { fetchRandomTossup } from '@/services/qbreader';
+import { useSettings } from '@/hooks/useSettings';
 import type { AnswerResult, SessionHistoryEntry, Tossup } from '@/types/qb';
 
 interface QuizSessionContextValue {
@@ -35,6 +36,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
   const [history, setHistory] = useState<SessionHistoryEntry[]>([]);
   const [error, setError] = useState<string>();
   const [lastResult, setLastResult] = useState<AnswerResult>();
+  const { selectedDifficulties, selectedCategories } = useSettings();
 
   const clearError = useCallback(() => setError(undefined), []);
 
@@ -48,7 +50,12 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     setLastResult(undefined);
 
     try {
-      const tossup = await fetchRandomTossup(abortController.signal);
+      const filters = {
+        difficulties:
+          selectedDifficulties.length > 0 ? selectedDifficulties : undefined,
+        categories: selectedCategories.length > 0 ? selectedCategories : undefined,
+      };
+      const tossup = await fetchRandomTossup(abortController.signal, filters);
       setCurrentQuestion(tossup);
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
@@ -64,7 +71,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     } finally {
       setLoadingQuestion(false);
     }
-  }, []);
+  }, [selectedCategories, selectedDifficulties]);
 
   const judgeAnswer = useCallback(
     (answer: string) => {
