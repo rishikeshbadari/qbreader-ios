@@ -1,4 +1,4 @@
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 
 import { ThemedText } from '@/components/ThemedText';
@@ -36,8 +36,15 @@ export function QuestionCard({
   const animationTimeout = useRef<NodeJS.Timeout | null>(null);
   const buzzedRef = useRef(isBuzzed);
   const questionScrollRef = useRef<ScrollView | null>(null);
+  const [hasRevealedFullQuestion, setHasRevealedFullQuestion] = useState(false);
   const shouldAnimateQuestion =
-    Boolean(tossup?.question) && !isLoading && !error && !showAnswer;
+    Boolean(tossup?.question) && !isLoading && !error && !showAnswer && !hasRevealedFullQuestion;
+  const canShowRevealButton =
+    Boolean(tossup?.question) && !isLoading && !error && !showAnswer && !hasRevealedFullQuestion;
+
+  useEffect(() => {
+    setHasRevealedFullQuestion(false);
+  }, [tossup?.id]);
 
   const clearAnimationTimeout = () => {
     if (animationTimeout.current) {
@@ -62,7 +69,7 @@ export function QuestionCard({
       return;
     }
 
-    if (showAnswer) {
+    if (showAnswer || hasRevealedFullQuestion) {
       setDisplayedQuestion(questionText);
       return;
     }
@@ -98,7 +105,7 @@ export function QuestionCard({
     return () => {
       clearAnimationTimeout();
     };
-  }, [tossup?.id, tossup?.question, isLoading, error, showAnswer]);
+  }, [tossup?.id, tossup?.question, isLoading, error, showAnswer, hasRevealedFullQuestion]);
 
   useEffect(() => {
     if (!questionScrollRef.current) {
@@ -123,6 +130,15 @@ export function QuestionCard({
       ? `Question ${tossup.questionNumber}`
       : undefined,
   ].filter(Boolean) as string[];
+
+  const handleRevealFullQuestion = () => {
+    if (!tossup?.question || hasRevealedFullQuestion) {
+      return;
+    }
+    clearAnimationTimeout();
+    setHasRevealedFullQuestion(true);
+    setDisplayedQuestion(tossup.question);
+  };
 
   return (
     <ThemedView
@@ -165,6 +181,20 @@ export function QuestionCard({
             </ThemedText>
           </ScrollView>
         )}
+        {canShowRevealButton ? (
+          <Pressable
+            onPress={handleRevealFullQuestion}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.revealButton,
+              {
+                borderColor,
+                opacity: pressed ? 0.6 : 1,
+              },
+            ]}>
+            <ThemedText style={[styles.revealLabel, { color: brandColor }]}>Show full question</ThemedText>
+          </Pressable>
+        ) : null}
       </View>
       {showAnswer && (
         <View style={styles.answerBlock}>
@@ -229,6 +259,7 @@ const styles = StyleSheet.create({
   },
   questionBlock: {
     height: 300,
+    position: 'relative',
   },
   questionScroll: {
     flex: 1,
@@ -264,6 +295,21 @@ const styles = StyleSheet.create({
   },
   error: {
     color: '#DC2626',
+  },
+  revealButton: {
+    position: 'absolute',
+    right: 10,
+    bottom: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(15, 23, 42, 0.05)',
+  },
+  revealLabel: {
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
 });
 

@@ -11,7 +11,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AnswerInput } from '@/components/quiz/AnswerInput';
-import { DirectivePill } from '@/components/quiz/DirectivePill';
 import { QuestionCard } from '@/components/quiz/QuestionCard';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -114,7 +113,6 @@ export default function PlayScreen() {
                   Powered by QBReader — fresh tossups every time you buzz.
                 </ThemedText>
               </View>
-              <DirectivePill result={lastResult} />
             </View>
             <QuestionCard
               tossup={currentQuestion}

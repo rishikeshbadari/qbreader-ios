@@ -24,7 +24,7 @@ export function SessionStats({ stats, compact = false, onSelectCard }: Props) {
     value: string;
     interactive?: boolean;
   }[] = [
-    { key: 'answered', label: 'Answered', value: stats.total.toString(), interactive: true },
+    { key: 'answered', label: 'All', value: stats.total.toString(), interactive: true },
     { key: 'correct', label: 'Correct', value: stats.correct.toString(), interactive: true },
     { key: 'skipped', label: 'Skipped', value: stats.skipped.toString(), interactive: true },
     { key: 'incorrect', label: 'Incorrect', value: stats.incorrect.toString(), interactive: true },
