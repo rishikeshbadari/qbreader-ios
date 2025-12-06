@@ -1,5 +1,6 @@
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -16,6 +17,7 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useQuizSession } from '@/hooks/useQuizSession';
 import { useThemeColor } from '@/hooks/useThemeColor';
+import { useColorScheme } from '@/hooks/useColorScheme';
 
 export default function PlayScreen() {
   const {
@@ -30,23 +32,48 @@ export default function PlayScreen() {
   } = useQuizSession();
   const [answer, setAnswer] = useState('');
   const [hasBuzzed, setHasBuzzed] = useState(false);
+  const [playState, setPlayState] = useState<'idle' | 'active' | 'paused'>('idle');
   const borderColor = useThemeColor({}, 'border');
   const dangerColor = useThemeColor({}, 'error');
   const brandColor = useThemeColor({}, 'brand');
   const skipTextColor = useThemeColor({}, 'text');
   const tabBarHeight = useBottomTabBarHeight();
   const extraFooterPadding = Platform.OS === 'ios' ? tabBarHeight : 0;
-
-  useEffect(() => {
-    if (!currentQuestion && !loadingQuestion) {
-      void loadNextQuestion();
-    }
-  }, [currentQuestion, loadNextQuestion, loadingQuestion]);
+  const colorScheme = useColorScheme();
+  const playStateRef = useRef(playState);
+  const currentQuestionRef = useRef(currentQuestion);
+  const lastResultRef = useRef(lastResult);
 
   useEffect(() => {
     setAnswer('');
     setHasBuzzed(false);
   }, [currentQuestion?.id]);
+
+  useEffect(() => {
+    playStateRef.current = playState;
+  }, [playState]);
+
+  useEffect(() => {
+    currentQuestionRef.current = currentQuestion;
+  }, [currentQuestion]);
+
+  useEffect(() => {
+    lastResultRef.current = lastResult;
+  }, [lastResult]);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        if (
+          playStateRef.current === 'active' &&
+          currentQuestionRef.current &&
+          !lastResultRef.current
+        ) {
+          setPlayState('paused');
+        }
+      };
+    }, [])
+  );
 
   const canCheck = useMemo(
     () =>
@@ -61,7 +88,7 @@ export default function PlayScreen() {
     : 'skip';
 
   const handleSubmit = () => {
-    if (!canCheck) {
+    if (!canCheck || playState !== 'active') {
       return;
     }
 
@@ -69,7 +96,7 @@ export default function PlayScreen() {
   };
 
   const handleBuzz = () => {
-    if (!currentQuestion || loadingQuestion || hasBuzzed) {
+    if (!currentQuestion || loadingQuestion || hasBuzzed || playState !== 'active') {
       return;
     }
     setHasBuzzed(true);
@@ -96,6 +123,30 @@ export default function PlayScreen() {
     void loadNextQuestion();
   };
 
+  const handleOverlayPress = () => {
+    if (playState === 'idle') {
+      setPlayState('active');
+      setAnswer('');
+      setHasBuzzed(false);
+      clearError();
+      void loadNextQuestion();
+      return;
+    }
+
+    if (playState === 'paused') {
+      setPlayState('active');
+    }
+  };
+
+  const showOverlay =
+    playState !== 'active' &&
+    (playState === 'idle' || (playState === 'paused' && currentQuestion && !lastResult));
+  const overlayLabel = playState === 'paused' ? 'Click to Continue' : 'Click to Play';
+  const overlayBackground =
+    colorScheme === 'dark' ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.95)';
+  const overlayTextColor = colorScheme === 'dark' ? '#fff' : '#0f172a';
+  const controlsDisabled = playState !== 'active';
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -114,19 +165,42 @@ export default function PlayScreen() {
                 </ThemedText>
               </View>
             </View>
-            <QuestionCard
-              tossup={currentQuestion}
-              isLoading={loadingQuestion}
-              error={error}
-              showAnswer={Boolean(lastResult)}
-              isBuzzed={hasBuzzed}
-              result={lastResult}
-            />
+            <View style={styles.questionWrapper}>
+              <QuestionCard
+                tossup={currentQuestion}
+                isLoading={loadingQuestion}
+                error={error}
+                showAnswer={Boolean(lastResult)}
+                isBuzzed={hasBuzzed}
+                result={lastResult}
+                revealActive={playState === 'active'}
+              />
+              {showOverlay ? (
+                <Pressable
+                  onPress={handleOverlayPress}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [
+                    styles.questionOverlay,
+                    {
+                      backgroundColor: overlayBackground,
+                      opacity: pressed ? 0.9 : 1,
+                    },
+                  ]}>
+                  <ThemedText type="defaultSemiBold" style={[styles.overlayLabel, { color: overlayTextColor }]}>
+                    {overlayLabel}
+                  </ThemedText>
+                </Pressable>
+              ) : null}
+            </View>
             <View style={styles.actions}>
               <Pressable
                 onPress={handleBuzz}
                 disabled={
-                  !currentQuestion || loadingQuestion || hasBuzzed || Boolean(lastResult)
+                  !currentQuestion ||
+                  loadingQuestion ||
+                  hasBuzzed ||
+                  Boolean(lastResult) ||
+                  controlsDisabled
                 }
                 accessibilityRole="button"
                 style={({ pressed }) => [
@@ -151,8 +225,8 @@ export default function PlayScreen() {
                 onPress={buttonMode === 'check' ? handleSubmit : handleSkip}
                 disabled={
                   buttonMode === 'check'
-                    ? !canCheck
-                    : !currentQuestion || loadingQuestion
+                    ? !canCheck || controlsDisabled
+                    : !currentQuestion || loadingQuestion || controlsDisabled
                 }
                 accessibilityRole="button"
                 style={({ pressed }) => [
@@ -190,13 +264,18 @@ export default function PlayScreen() {
                 </ThemedText>
               </Pressable>
             </View>
-            {hasBuzzed ? (
+            {hasBuzzed && playState === 'active' ? (
               <View style={styles.answerSection}>
                 <AnswerInput
                   value={answer}
                   onChangeText={setAnswer}
                   onSubmit={handleSubmit}
-                  disabled={!currentQuestion || loadingQuestion || Boolean(lastResult)}
+                  disabled={
+                    !currentQuestion ||
+                    loadingQuestion ||
+                    Boolean(lastResult) ||
+                    controlsDisabled
+                  }
                   autoFocus={hasBuzzed && !lastResult}
                 />
               </View>
@@ -242,6 +321,27 @@ const styles = StyleSheet.create({
   subtitle: {
     marginTop: 4,
     opacity: 0.8,
+  },
+  questionWrapper: {
+    position: 'relative',
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  questionOverlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  overlayLabel: {
+    fontSize: 18,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   actions: {
     flexDirection: 'row',

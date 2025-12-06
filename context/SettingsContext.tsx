@@ -1,9 +1,11 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from 'react';
@@ -33,6 +35,7 @@ type SettingsContextValue = {
 };
 
 const SettingsContext = createContext<SettingsContextValue | undefined>(undefined);
+const SETTINGS_STORAGE_KEY = 'quizbowl:settings';
 
 export function SettingsProvider({ children }: PropsWithChildren) {
   const [availableDifficulties, setAvailableDifficulties] = useState<DifficultyOption[]>([]);
@@ -60,30 +63,76 @@ export function SettingsProvider({ children }: PropsWithChildren) {
     }));
   }, []);
 
-  const applyDefaults = useCallback(
-    (difficulties: DifficultyOption[], categories: CategoryOption[]) => {
-      const flattenedDifficulties = difficulties.flatMap((option) => option.values);
-      setSelectedDifficulties((prev) => {
-        if (prev.length === 0) {
-          return flattenedDifficulties;
-        }
+  const persistedSelectionsRef = useRef<{
+    difficulties?: number[];
+    categories?: string[];
+  }>({});
+  const [storageReady, setStorageReady] = useState(false);
 
-        const filtered = prev.filter((value) =>
+  useEffect(() => {
+    const loadStoredSelections = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored) as {
+            difficulties?: number[];
+            categories?: string[];
+          };
+          persistedSelectionsRef.current = parsed ?? {};
+        }
+      } catch (error) {
+        console.error('Failed to load stored settings', error);
+      } finally {
+        setStorageReady(true);
+      }
+    };
+
+    void loadStoredSelections();
+  }, []);
+
+  const applyDefaults = useCallback(
+    (
+      difficulties: DifficultyOption[],
+      categories: CategoryOption[],
+      persisted?: { difficulties?: number[]; categories?: string[] }
+    ) => {
+      const flattenedDifficulties = difficulties.flatMap((option) => option.values);
+      const allDifficulties = () => flattenedDifficulties;
+      const allCategories = () => categories.map((option) => option.name);
+
+      setSelectedDifficulties((prev) => {
+        const persistedValues = persisted?.difficulties?.filter((value) =>
           flattenedDifficulties.includes(value)
         );
-        return filtered.length > 0 ? filtered : flattenedDifficulties;
+        if (persistedValues && persistedValues.length > 0) {
+          return persistedValues;
+        }
+
+        if (prev.length === 0) {
+          return allDifficulties();
+        }
+
+        const filtered = prev.filter((value) => flattenedDifficulties.includes(value));
+        return filtered.length > 0 ? filtered : allDifficulties();
       });
       clearSelectionError('difficulty');
 
       setSelectedCategories((prev) => {
+        const persistedValues = persisted?.categories?.filter((name) =>
+          categories.some((option) => option.name === name)
+        );
+        if (persistedValues && persistedValues.length > 0) {
+          return persistedValues;
+        }
+
         if (prev.length === 0) {
-          return categories.map((option) => option.name);
+          return allCategories();
         }
 
         const filtered = prev.filter((name) =>
           categories.some((option) => option.name === name)
         );
-        return filtered.length > 0 ? filtered : categories.map((option) => option.name);
+        return filtered.length > 0 ? filtered : allCategories();
       });
       clearSelectionError('category');
     },
@@ -98,7 +147,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
       const { difficulties, categories } = await fetchFilterOptions();
       setAvailableDifficulties(difficulties);
       setAvailableCategories(categories);
-      applyDefaults(difficulties, categories);
+      applyDefaults(difficulties, categories, persistedSelectionsRef.current);
     } catch (error) {
       console.error('Failed to load filter options', error);
       setLoadError(
@@ -110,8 +159,28 @@ export function SettingsProvider({ children }: PropsWithChildren) {
   }, [applyDefaults]);
 
   useEffect(() => {
+    if (!storageReady) {
+      return;
+    }
     void loadOptions();
-  }, [loadOptions]);
+  }, [loadOptions, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) {
+      return;
+    }
+    const payload = JSON.stringify({
+      difficulties: selectedDifficulties,
+      categories: selectedCategories,
+    });
+    persistedSelectionsRef.current = {
+      difficulties: selectedDifficulties,
+      categories: selectedCategories,
+    };
+    AsyncStorage.setItem(SETTINGS_STORAGE_KEY, payload).catch((error) =>
+      console.error('Failed to persist settings', error)
+    );
+  }, [selectedCategories, selectedDifficulties, storageReady]);
 
   const toggleDifficulty = useCallback(
     (values: number[]) => {

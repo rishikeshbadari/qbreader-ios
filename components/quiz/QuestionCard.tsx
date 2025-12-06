@@ -14,6 +14,7 @@ interface Props {
   showAnswer: boolean;
   isBuzzed?: boolean;
   result?: AnswerResult;
+  revealActive?: boolean;
 }
 
 const WORD_REVEAL_INTERVAL_MS = 320;
@@ -25,6 +26,7 @@ export function QuestionCard({
   showAnswer,
   isBuzzed = false,
   result,
+  revealActive = true,
 }: Props) {
   const borderColor = useThemeColor({}, 'border');
   const mutedColor = useThemeColor({}, 'muted');
@@ -37,10 +39,13 @@ export function QuestionCard({
   const buzzedRef = useRef(isBuzzed);
   const questionScrollRef = useRef<ScrollView | null>(null);
   const [hasRevealedFullQuestion, setHasRevealedFullQuestion] = useState(false);
+  const wordsRef = useRef<string[]>([]);
+  const revealIndexRef = useRef(0);
   const shouldAnimateQuestion =
     Boolean(tossup?.question) && !isLoading && !error && !showAnswer && !hasRevealedFullQuestion;
+  const isRevealRunning = shouldAnimateQuestion && revealActive;
   const canShowRevealButton =
-    Boolean(tossup?.question) && !isLoading && !error && !showAnswer && !hasRevealedFullQuestion;
+    shouldAnimateQuestion && revealActive;
 
   useEffect(() => {
     setHasRevealedFullQuestion(false);
@@ -65,37 +70,48 @@ export function QuestionCard({
     clearAnimationTimeout();
 
     if (!tossup || !questionText || isLoading || error) {
+      wordsRef.current = [];
+      revealIndexRef.current = 0;
       setDisplayedQuestion('');
       return;
     }
 
-    if (showAnswer || hasRevealedFullQuestion) {
-      setDisplayedQuestion(questionText);
-      return;
-    }
-
     const words = questionText.split(/\s+/).filter(Boolean);
-    if (words.length === 0) {
+    wordsRef.current = words;
+
+    if (showAnswer || hasRevealedFullQuestion) {
+      revealIndexRef.current = words.length;
       setDisplayedQuestion(questionText);
       return;
     }
 
-    let index = 0;
+    revealIndexRef.current = 0;
     setDisplayedQuestion('');
+  }, [tossup?.id, tossup?.question, isLoading, error, showAnswer, hasRevealedFullQuestion]);
+
+  useEffect(() => {
+    if (!isRevealRunning) {
+      clearAnimationTimeout();
+      return;
+    }
+
+    if (revealIndexRef.current >= wordsRef.current.length) {
+      clearAnimationTimeout();
+      return;
+    }
 
     const revealNextWord = () => {
-      const nextWord = words[index];
+      const nextWord = wordsRef.current[revealIndexRef.current];
       if (typeof nextWord !== 'string') {
-        setDisplayedQuestion((previous) => previous);
         return;
       }
 
       setDisplayedQuestion((previous) =>
         previous.length > 0 ? `${previous} ${nextWord}` : nextWord
       );
-      index += 1;
+      revealIndexRef.current += 1;
 
-      if (index < words.length && !buzzedRef.current) {
+      if (revealIndexRef.current < wordsRef.current.length && !buzzedRef.current) {
         animationTimeout.current = setTimeout(revealNextWord, WORD_REVEAL_INTERVAL_MS);
       }
     };
@@ -105,19 +121,19 @@ export function QuestionCard({
     return () => {
       clearAnimationTimeout();
     };
-  }, [tossup?.id, tossup?.question, isLoading, error, showAnswer, hasRevealedFullQuestion]);
+  }, [isRevealRunning]);
 
   useEffect(() => {
     if (!questionScrollRef.current) {
       return;
     }
 
-    if (shouldAnimateQuestion) {
+    if (isRevealRunning) {
       questionScrollRef.current.scrollToEnd({ animated: true });
     } else {
       questionScrollRef.current.scrollTo({ y: 0, animated: false });
     }
-  }, [displayedQuestion, shouldAnimateQuestion]);
+  }, [displayedQuestion, isRevealRunning]);
 
   const metaChips = [
     tossup?.category,
@@ -137,6 +153,7 @@ export function QuestionCard({
     }
     clearAnimationTimeout();
     setHasRevealedFullQuestion(true);
+    revealIndexRef.current = wordsRef.current.length;
     setDisplayedQuestion(tossup.question);
   };
 
