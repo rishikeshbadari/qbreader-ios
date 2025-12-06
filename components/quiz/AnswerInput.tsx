@@ -1,7 +1,6 @@
 import { useCallback } from 'react';
-import { Keyboard, Pressable, StyleSheet, TextInput } from 'react-native';
+import { Keyboard, StyleSheet, TextInput } from 'react-native';
 
-import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
 import { useThemeColor } from '@/hooks/useThemeColor';
@@ -22,7 +21,6 @@ export function AnswerInput({
   autoFocus,
 }: Props) {
   const borderColor = useThemeColor({}, 'border');
-  const brandColor = useThemeColor({}, 'brand');
   const mutedColor = useThemeColor({}, 'muted');
   const inputTextColor = useThemeColor({}, 'text');
 
@@ -51,21 +49,6 @@ export function AnswerInput({
         textContentType="none"
         autoFocus={autoFocus}
       />
-      <Pressable
-        onPress={handleSubmit}
-        disabled={disabled}
-        accessibilityRole="button"
-        style={({ pressed }) => [
-          styles.submitButton,
-          {
-            backgroundColor: brandColor,
-            opacity: disabled ? 0.4 : pressed ? 0.85 : 1,
-          },
-        ]}>
-        <ThemedText type="defaultSemiBold" style={styles.submitLabel}>
-          Check
-        </ThemedText>
-      </Pressable>
     </ThemedView>
   );
 }
@@ -84,13 +67,5 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     paddingVertical: 10,
-  },
-  submitButton: {
-    borderRadius: 999,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-  },
-  submitLabel: {
-    color: '#fff',
   },
 });

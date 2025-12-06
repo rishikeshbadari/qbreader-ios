@@ -32,8 +32,9 @@ export default function PlayScreen() {
   const [answer, setAnswer] = useState('');
   const [hasBuzzed, setHasBuzzed] = useState(false);
   const borderColor = useThemeColor({}, 'border');
-  const brandColor = useThemeColor({}, 'brand');
   const dangerColor = useThemeColor({}, 'error');
+  const brandColor = useThemeColor({}, 'brand');
+  const skipTextColor = useThemeColor({}, 'text');
   const tabBarHeight = useBottomTabBarHeight();
   const extraFooterPadding = Platform.OS === 'ios' ? tabBarHeight : 0;
 
@@ -48,33 +49,24 @@ export default function PlayScreen() {
     setHasBuzzed(false);
   }, [currentQuestion?.id]);
 
-  const canSubmit = useMemo(
+  const canCheck = useMemo(
     () =>
-      Boolean(answer.trim()) &&
-      Boolean(currentQuestion) &&
-      !loadingQuestion &&
-      !lastResult,
-    [answer, currentQuestion, loadingQuestion, lastResult]
+      Boolean(currentQuestion) && !loadingQuestion && hasBuzzed && !lastResult,
+    [currentQuestion, hasBuzzed, lastResult, loadingQuestion]
   );
 
+  const buttonMode: 'skip' | 'check' | 'next' = hasBuzzed
+    ? lastResult
+      ? 'next'
+      : 'check'
+    : 'skip';
+
   const handleSubmit = () => {
-    if (!canSubmit) {
+    if (!canCheck) {
       return;
     }
 
     judgeAnswer(answer);
-    setShowAnswer(true);
-  };
-
-  const handleNext = () => {
-    if (currentQuestion && !lastResult) {
-      skipQuestion();
-    }
-    setAnswer('');
-    setShowAnswer(false);
-    setHasBuzzed(false);
-    clearError();
-    void loadNextQuestion();
   };
 
   const handleBuzz = () => {
@@ -82,6 +74,27 @@ export default function PlayScreen() {
       return;
     }
     setHasBuzzed(true);
+    clearError();
+  };
+
+  const handleSkip = () => {
+    if (!currentQuestion || loadingQuestion) {
+      return;
+    }
+    if (!lastResult) {
+      skipQuestion();
+    }
+    setAnswer('');
+    setHasBuzzed(false);
+    clearError();
+    void loadNextQuestion();
+  };
+
+  const handleRetry = () => {
+    setAnswer('');
+    setHasBuzzed(false);
+    clearError();
+    void loadNextQuestion();
   };
 
   return (
@@ -92,7 +105,7 @@ export default function PlayScreen() {
         style={styles.flex}>
         <ThemedView style={styles.container}>
           <ScrollView
-            contentContainerStyle={styles.content}
+            contentContainerStyle={[styles.content, { paddingBottom: 40 + extraFooterPadding }]}
             keyboardShouldPersistTaps="handled">
             <View style={styles.header}>
               <View style={{ flex: 1 }}>
@@ -107,79 +120,102 @@ export default function PlayScreen() {
               tossup={currentQuestion}
               isLoading={loadingQuestion}
               error={error}
-              showAnswer={showAnswer || Boolean(lastResult)}
+              showAnswer={Boolean(lastResult)}
               isBuzzed={hasBuzzed}
+              result={lastResult}
             />
-            <Pressable
-              onPress={handleBuzz}
-              disabled={!currentQuestion || loadingQuestion || hasBuzzed}
-              accessibilityRole="button"
-              style={({ pressed }) => [
-                styles.buzzButton,
-                {
-                  backgroundColor: dangerColor,
-                  opacity:
-                    !currentQuestion || loadingQuestion
-                      ? 0.3
-                      : hasBuzzed
-                        ? 0.6
-                        : pressed
-                          ? 0.8
-                          : 1,
-                },
-              ]}>
-              <ThemedText type="defaultSemiBold" style={styles.buzzLabel}>
-                {hasBuzzed ? 'Buzzed' : 'Buzz'}
-              </ThemedText>
-            </Pressable>
+            <View style={styles.actions}>
+              <Pressable
+                onPress={handleBuzz}
+                disabled={
+                  !currentQuestion || loadingQuestion || hasBuzzed || Boolean(lastResult)
+                }
+                accessibilityRole="button"
+                style={({ pressed }) => [
+                  styles.buzzButton,
+                  {
+                    backgroundColor: dangerColor,
+                    opacity:
+                      !currentQuestion || loadingQuestion
+                        ? 0.25
+                        : hasBuzzed || lastResult
+                          ? 0.6
+                          : pressed
+                            ? 0.9
+                            : 1,
+                  },
+                ]}>
+                <ThemedText type="defaultSemiBold" style={styles.actionLabel}>
+                  Buzz
+                </ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={buttonMode === 'check' ? handleSubmit : handleSkip}
+                disabled={
+                  buttonMode === 'check'
+                    ? !canCheck
+                    : !currentQuestion || loadingQuestion
+                }
+                accessibilityRole="button"
+                style={({ pressed }) => [
+                  styles.skipButton,
+                  {
+                    borderColor,
+                    borderWidth: buttonMode === 'check' ? 0 : 1,
+                    backgroundColor:
+                      buttonMode === 'check' ? brandColor : 'transparent',
+                    opacity:
+                      buttonMode === 'check'
+                        ? !canCheck
+                          ? 0.4
+                          : pressed
+                            ? 0.8
+                            : 1
+                        : !currentQuestion || loadingQuestion
+                          ? 0.4
+                          : pressed
+                            ? 0.7
+                            : 1,
+                  },
+                ]}>
+                <ThemedText
+                  type="defaultSemiBold"
+                  style={[
+                    styles.skipLabel,
+                    { color: buttonMode === 'check' ? '#fff' : skipTextColor },
+                  ]}>
+                  {buttonMode === 'check'
+                    ? 'Check'
+                    : buttonMode === 'next'
+                      ? 'Next'
+                      : 'Skip'}
+                </ThemedText>
+              </Pressable>
+            </View>
+            {hasBuzzed ? (
+              <View style={styles.answerSection}>
+                <AnswerInput
+                  value={answer}
+                  onChangeText={setAnswer}
+                  onSubmit={handleSubmit}
+                  disabled={!currentQuestion || loadingQuestion || Boolean(lastResult)}
+                  autoFocus={hasBuzzed && !lastResult}
+                />
+              </View>
+            ) : null}
             {lastResult?.directedPrompt ? (
               <ThemedText style={styles.prompt}>
                 Directed prompt: {lastResult.directedPrompt}
               </ThemedText>
             ) : null}
             {error ? (
-              <Pressable onPress={handleNext}>
+              <Pressable onPress={handleRetry}>
                 <ThemedText style={styles.error}>
                   {error} Tap to try again.
                 </ThemedText>
               </Pressable>
             ) : null}
           </ScrollView>
-          <View style={[styles.footer, { paddingBottom: 20 + extraFooterPadding }]}>
-            <AnswerInput
-              value={answer}
-              onChangeText={setAnswer}
-              onSubmit={handleSubmit}
-              disabled={!currentQuestion || loadingQuestion}
-            />
-            <View style={styles.buttonRow}>
-              <Pressable
-                onPress={() => setShowAnswer((previous) => !previous)}
-                style={({ pressed }) => [
-                  styles.secondaryButton,
-                  { borderColor, opacity: pressed ? 0.7 : 1 },
-                ]}
-                disabled={!currentQuestion}>
-                <ThemedText type="defaultSemiBold">
-                  {showAnswer ? 'Hide' : 'Reveal'} Answer
-                </ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={handleNext}
-                disabled={loadingQuestion}
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  {
-                    backgroundColor: brandColor,
-                    opacity: loadingQuestion ? 0.5 : pressed ? 0.7 : 1,
-                  },
-                ]}>
-                <ThemedText type="defaultSemiBold">
-                  {loadingQuestion ? 'Loading…' : 'Next Tossup'}
-                </ThemedText>
-              </Pressable>
-            </View>
-          </View>
         </ThemedView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -209,38 +245,34 @@ const styles = StyleSheet.create({
     marginTop: 4,
     opacity: 0.8,
   },
-  footer: {
-    padding: 20,
-    gap: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(148, 163, 184, 0.3)',
-    backgroundColor: 'transparent',
-  },
-  buttonRow: {
+  actions: {
     flexDirection: 'row',
     gap: 12,
   },
   buzzButton: {
-    borderRadius: 999,
-    paddingVertical: 14,
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  buzzLabel: {
+  skipButton: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  actionLabel: {
     color: '#fff',
     letterSpacing: 0.6,
   },
-  primaryButton: {
-    flex: 1,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
+  skipLabel: {
+    letterSpacing: 0.6,
   },
-  secondaryButton: {
-    flex: 1,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    borderWidth: 1,
+  answerSection: {
+    marginTop: -4,
   },
   prompt: {
     fontStyle: 'italic',

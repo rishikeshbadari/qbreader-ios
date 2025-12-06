@@ -5,7 +5,7 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
 import { useThemeColor } from '@/hooks/useThemeColor';
-import type { Tossup } from '@/types/qb';
+import type { AnswerResult, Tossup } from '@/types/qb';
 
 interface Props {
   tossup?: Tossup;
@@ -13,6 +13,7 @@ interface Props {
   error?: string;
   showAnswer: boolean;
   isBuzzed?: boolean;
+  result?: AnswerResult;
 }
 
 const WORD_REVEAL_INTERVAL_MS = 320;
@@ -23,9 +24,14 @@ export function QuestionCard({
   error,
   showAnswer,
   isBuzzed = false,
+  result,
 }: Props) {
   const borderColor = useThemeColor({}, 'border');
   const mutedColor = useThemeColor({}, 'muted');
+  const successColor = useThemeColor({}, 'success');
+  const warningColor = useThemeColor({}, 'warning');
+  const errorColor = useThemeColor({}, 'error');
+  const brandColor = useThemeColor({}, 'brand');
   const [displayedQuestion, setDisplayedQuestion] = useState('');
   const animationTimeout = useRef<NodeJS.Timeout | null>(null);
   const buzzedRef = useRef(isBuzzed);
@@ -70,8 +76,14 @@ export function QuestionCard({
     setDisplayedQuestion('');
 
     const revealNextWord = () => {
+      const nextWord = words[index];
+      if (typeof nextWord !== 'string') {
+        setDisplayedQuestion((previous) => previous);
+        return;
+      }
+
       setDisplayedQuestion((previous) =>
-        previous.length > 0 ? `${previous} ${words[index]}` : words[index]
+        previous.length > 0 ? `${previous} ${nextWord}` : nextWord
       );
       index += 1;
 
@@ -137,9 +149,21 @@ export function QuestionCard({
       </View>
       {showAnswer && (
         <View style={styles.answerBlock}>
-          <ThemedText type="subtitle" style={styles.answerLabel}>
-            Answer
-          </ThemedText>
+          <View style={styles.answerHeader}>
+            <ThemedText type="subtitle" style={styles.answerLabel}>
+              Answer
+            </ThemedText>
+            {result ? (
+              <ThemedText
+                type="defaultSemiBold"
+                style={[
+                  styles.answerResult,
+                  { color: getResultColor(result, successColor, warningColor, errorColor, brandColor) },
+                ]}>
+                {getResultLabel(result)}
+              </ThemedText>
+            ) : null}
+          </View>
           <ThemedText type="defaultSemiBold">{tossup?.answer}</ThemedText>
         </View>
       )}
@@ -205,7 +229,58 @@ const styles = StyleSheet.create({
   answerLabel: {
     fontSize: 18,
   },
+  answerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  answerResult: {
+    fontSize: 16,
+  },
   error: {
     color: '#DC2626',
   },
 });
+
+function getResultLabel(result?: AnswerResult): string {
+  if (!result) {
+    return '';
+  }
+
+  const directive = result.directive.toLowerCase();
+  if (directive === 'accept') {
+    return 'Correct';
+  }
+  if (directive === 'prompt') {
+    return 'Prompt';
+  }
+  if (directive === 'skip') {
+    return 'Skipped';
+  }
+  return 'Incorrect';
+}
+
+function getResultColor(
+  result: AnswerResult | undefined,
+  successColor: string,
+  warningColor: string,
+  errorColor: string,
+  brandColor: string
+): string {
+  if (!result) {
+    return brandColor;
+  }
+
+  const directive = result.directive.toLowerCase();
+  if (directive === 'accept') {
+    return successColor;
+  }
+  if (directive === 'prompt') {
+    return warningColor;
+  }
+  if (directive === 'skip') {
+    return brandColor;
+  }
+  return errorColor;
+}

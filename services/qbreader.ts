@@ -51,6 +51,14 @@ export async function fetchRandomTossup(signal?: AbortSignal): Promise<Tossup> {
   return normalizeTossup(tossups[0]);
 }
 
+function cleanupPlainText(value: string): string {
+  if (!value) {
+    return '';
+  }
+
+  return value.replace(/\s*undefined\s*$/gi, '').trim();
+}
+
 function normalizeTossup(raw: RawTossup): Tossup {
   const id = String(raw.id ?? raw._id ?? `${Date.now()}`);
   const questionHtml = raw.question ?? raw.question_sanitized ?? '';
@@ -62,12 +70,19 @@ function normalizeTossup(raw: RawTossup): Tossup {
       ? Number.parseInt(raw.packet, 10)
       : raw.packet?.number;
 
+  const questionPlainText = cleanupPlainText(
+    raw.question_sanitized ?? stripHtmlTags(questionHtml)
+  );
+  const answerPlainText = cleanupPlainText(
+    raw.answer_sanitized ?? stripHtmlTags(answerHtml)
+  );
+
   return {
     id,
     questionHtml,
     answerHtml,
-    question: raw.question_sanitized ?? stripHtmlTags(questionHtml),
-    answer: raw.answer_sanitized ?? stripHtmlTags(answerHtml),
+    question: questionPlainText,
+    answer: answerPlainText,
     category:
       typeof raw.category === 'string' ? raw.category : raw.category?.name,
     subcategory:
