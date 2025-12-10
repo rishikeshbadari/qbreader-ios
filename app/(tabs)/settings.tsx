@@ -1,4 +1,5 @@
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ThemedText';
@@ -12,10 +13,12 @@ export default function SettingsScreen() {
     availableCategories,
     selectedDifficulties,
     selectedCategories,
+    revealSpeed,
     toggleDifficulty,
     toggleCategory,
     selectAllDifficulties,
     selectAllCategories,
+    setRevealSpeed,
     loadingOptions,
     loadError,
     refreshOptions,
@@ -24,6 +27,18 @@ export default function SettingsScreen() {
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
   const textColor = useThemeColor({}, 'text');
+  const mutedColor = useThemeColor({}, 'muted');
+
+  const revealSpeedLabel =
+    revealSpeed >= 0.95
+      ? 'Instant'
+      : revealSpeed >= 0.7
+        ? 'Fast'
+        : revealSpeed >= 0.4
+          ? 'Moderate'
+          : revealSpeed >= 0.2
+            ? 'Slow'
+            : 'Very slow';
 
   const renderDifficultyChips = () =>
     availableDifficulties.map((option) => {
@@ -84,6 +99,30 @@ export default function SettingsScreen() {
             Difficulty and category filters update the requests we send to QBReader&apos;s
             public API before each tossup.
           </ThemedText>
+        </ThemedView>
+
+        <ThemedView style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <ThemedText type="subtitle">Question reveal speed</ThemedText>
+            <ThemedText style={[styles.speedLabel, { color: mutedColor }]}>
+              {revealSpeedLabel}
+            </ThemedText>
+          </View>
+          <Slider
+            minimumValue={0}
+            maximumValue={1}
+            step={0.05}
+            value={revealSpeed}
+            onValueChange={setRevealSpeed}
+            minimumTrackTintColor={brandColor}
+            maximumTrackTintColor={borderColor}
+            thumbTintColor={brandColor}
+            accessibilityLabel="Question reveal speed"
+          />
+          <View style={styles.speedLegends}>
+            <ThemedText style={[styles.speedLegend, { color: mutedColor }]}>Very slow</ThemedText>
+            <ThemedText style={[styles.speedLegend, { color: mutedColor }]}>Instant</ThemedText>
+          </View>
         </ThemedView>
 
         {loadError ? (
@@ -166,6 +205,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
+  },
+  speedLabel: {
+    opacity: 0.8,
+  },
+  speedLegends: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  speedLegend: {
+    fontSize: 12,
+    opacity: 0.8,
   },
   chipGrid: {
     flexDirection: 'row',

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
+import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import type { AnswerResult, Tossup } from '@/types/qb';
 
@@ -17,8 +18,6 @@ interface Props {
   revealActive?: boolean;
 }
 
-const WORD_REVEAL_INTERVAL_MS = 320;
-
 export function QuestionCard({
   tossup,
   isLoading,
@@ -28,6 +27,7 @@ export function QuestionCard({
   result,
   revealActive = true,
 }: Props) {
+  const { revealSpeed } = useSettings();
   const borderColor = useThemeColor({}, 'border');
   const mutedColor = useThemeColor({}, 'muted');
   const successColor = useThemeColor({}, 'success');
@@ -41,8 +41,14 @@ export function QuestionCard({
   const [hasRevealedFullQuestion, setHasRevealedFullQuestion] = useState(false);
   const wordsRef = useRef<string[]>([]);
   const revealIndexRef = useRef(0);
+  const revealIntervalMs = getRevealIntervalMs(revealSpeed);
   const shouldAnimateQuestion =
-    Boolean(tossup?.question) && !isLoading && !error && !showAnswer && !hasRevealedFullQuestion;
+    Boolean(tossup?.question) &&
+    !isLoading &&
+    !error &&
+    !showAnswer &&
+    !hasRevealedFullQuestion &&
+    revealIntervalMs > 0;
   const isRevealRunning = shouldAnimateQuestion && revealActive;
   const canShowRevealButton =
     shouldAnimateQuestion && revealActive;
@@ -79,15 +85,26 @@ export function QuestionCard({
     const words = questionText.split(/\s+/).filter(Boolean);
     wordsRef.current = words;
 
-    if (showAnswer || hasRevealedFullQuestion) {
+    if (showAnswer || hasRevealedFullQuestion || revealIntervalMs === 0) {
       revealIndexRef.current = words.length;
       setDisplayedQuestion(questionText);
+      if (revealIntervalMs === 0 && !hasRevealedFullQuestion) {
+        setHasRevealedFullQuestion(true);
+      }
       return;
     }
 
     revealIndexRef.current = 0;
     setDisplayedQuestion('');
-  }, [tossup?.id, tossup?.question, isLoading, error, showAnswer, hasRevealedFullQuestion]);
+  }, [
+    tossup?.id,
+    tossup?.question,
+    isLoading,
+    error,
+    showAnswer,
+    hasRevealedFullQuestion,
+    revealIntervalMs,
+  ]);
 
   useEffect(() => {
     if (!isRevealRunning) {
@@ -112,7 +129,7 @@ export function QuestionCard({
       revealIndexRef.current += 1;
 
       if (revealIndexRef.current < wordsRef.current.length && !buzzedRef.current) {
-        animationTimeout.current = setTimeout(revealNextWord, WORD_REVEAL_INTERVAL_MS);
+        animationTimeout.current = setTimeout(revealNextWord, revealIntervalMs);
       }
     };
 
@@ -370,4 +387,14 @@ function getResultColor(
     return brandColor;
   }
   return errorColor;
+}
+
+function getRevealIntervalMs(revealSpeed: number): number {
+  const clamped = Math.min(1, Math.max(0, revealSpeed));
+  if (clamped >= 0.99) {
+    return 0;
+  }
+  const slowestMs = 650;
+  const fastestMs = 80;
+  return Math.round(slowestMs - (slowestMs - fastestMs) * clamped);
 }

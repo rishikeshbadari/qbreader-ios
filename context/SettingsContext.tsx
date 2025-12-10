@@ -21,6 +21,7 @@ type SettingsContextValue = {
   availableCategories: CategoryOption[];
   selectedDifficulties: number[];
   selectedCategories: string[];
+  revealSpeed: number;
   loadingOptions: boolean;
   loadError?: string;
   refreshOptions: () => void;
@@ -28,6 +29,7 @@ type SettingsContextValue = {
   toggleCategory: (name: string) => void;
   selectAllDifficulties: () => void;
   selectAllCategories: () => void;
+  setRevealSpeed: (value: number) => void;
   selectionErrors: {
     difficulty?: string;
     category?: string;
@@ -42,6 +44,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
   const [availableCategories, setAvailableCategories] = useState<CategoryOption[]>([]);
   const [selectedDifficulties, setSelectedDifficulties] = useState<number[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [revealSpeed, setRevealSpeedState] = useState(0.5);
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [loadError, setLoadError] = useState<string>();
   const [selectionErrors, setSelectionErrors] = useState<{
@@ -66,6 +69,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
   const persistedSelectionsRef = useRef<{
     difficulties?: number[];
     categories?: string[];
+    revealSpeed?: number;
   }>({});
   const [storageReady, setStorageReady] = useState(false);
 
@@ -77,6 +81,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
           const parsed = JSON.parse(stored) as {
             difficulties?: number[];
             categories?: string[];
+            revealSpeed?: number;
           };
           persistedSelectionsRef.current = parsed ?? {};
         }
@@ -94,7 +99,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
     (
       difficulties: DifficultyOption[],
       categories: CategoryOption[],
-      persisted?: { difficulties?: number[]; categories?: string[] }
+      persisted?: { difficulties?: number[]; categories?: string[]; revealSpeed?: number }
     ) => {
       const flattenedDifficulties = difficulties.flatMap((option) => option.values);
       const allDifficulties = () => flattenedDifficulties;
@@ -135,6 +140,13 @@ export function SettingsProvider({ children }: PropsWithChildren) {
         return filtered.length > 0 ? filtered : allCategories();
       });
       clearSelectionError('category');
+
+      const persistedSpeed = persisted?.revealSpeed;
+      const nextSpeed =
+        typeof persistedSpeed === 'number' && Number.isFinite(persistedSpeed)
+          ? Math.min(1, Math.max(0, persistedSpeed))
+          : 0.5;
+      setRevealSpeedState(nextSpeed);
     },
     [clearSelectionError]
   );
@@ -172,15 +184,17 @@ export function SettingsProvider({ children }: PropsWithChildren) {
     const payload = JSON.stringify({
       difficulties: selectedDifficulties,
       categories: selectedCategories,
+      revealSpeed,
     });
     persistedSelectionsRef.current = {
       difficulties: selectedDifficulties,
       categories: selectedCategories,
+      revealSpeed,
     };
     AsyncStorage.setItem(SETTINGS_STORAGE_KEY, payload).catch((error) =>
       console.error('Failed to persist settings', error)
     );
-  }, [selectedCategories, selectedDifficulties, storageReady]);
+  }, [revealSpeed, selectedCategories, selectedDifficulties, storageReady]);
 
   const toggleDifficulty = useCallback(
     (values: number[]) => {
@@ -235,12 +249,18 @@ export function SettingsProvider({ children }: PropsWithChildren) {
     clearSelectionError('category');
   }, [availableCategories, clearSelectionError]);
 
+  const setRevealSpeed = useCallback((value: number) => {
+    const clamped = Math.min(1, Math.max(0, value));
+    setRevealSpeedState(clamped);
+  }, []);
+
   const value = useMemo<SettingsContextValue>(
     () => ({
       availableDifficulties,
       availableCategories,
       selectedDifficulties,
       selectedCategories,
+      revealSpeed,
       loadingOptions,
       loadError,
       refreshOptions: loadOptions,
@@ -248,6 +268,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
       toggleCategory,
       selectAllDifficulties,
       selectAllCategories,
+      setRevealSpeed,
       selectionErrors,
     }),
     [
@@ -256,6 +277,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
       loadError,
       loadingOptions,
       loadOptions,
+      revealSpeed,
       selectAllCategories,
       selectAllDifficulties,
       selectedCategories,
@@ -263,6 +285,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
       selectionErrors,
       toggleCategory,
       toggleDifficulty,
+      setRevealSpeed,
     ]
   );
 
