@@ -17,6 +17,9 @@ interface Props {
   result?: AnswerResult;
   revealActive?: boolean;
   onFullQuestionRevealChange?: (isRevealed: boolean) => void;
+  revealSpeedOverride?: number;
+  showRevealButton?: boolean;
+  showMeta?: boolean;
 }
 
 export function QuestionCard({
@@ -28,8 +31,13 @@ export function QuestionCard({
   result,
   revealActive = true,
   onFullQuestionRevealChange,
+  revealSpeedOverride,
+  showRevealButton = true,
+  showMeta = true,
 }: Props) {
   const { revealSpeed } = useSettings();
+  const effectiveRevealSpeed =
+    typeof revealSpeedOverride === 'number' ? revealSpeedOverride : revealSpeed;
   const borderColor = useThemeColor({}, 'border');
   const mutedColor = useThemeColor({}, 'muted');
   const successColor = useThemeColor({}, 'success');
@@ -44,7 +52,7 @@ export function QuestionCard({
   const [hasRevealedFullQuestion, setHasRevealedFullQuestion] = useState(false);
   const wordsRef = useRef<string[]>([]);
   const revealIndexRef = useRef(0);
-  const revealIntervalMs = getRevealIntervalMs(revealSpeed);
+  const revealIntervalMs = getRevealIntervalMs(effectiveRevealSpeed);
   const shouldAnimateQuestion =
     Boolean(tossup?.question) &&
     !isLoading &&
@@ -54,7 +62,7 @@ export function QuestionCard({
     revealIntervalMs > 0;
   const isRevealRunning = shouldAnimateQuestion && revealActive;
   const canShowRevealButton =
-    shouldAnimateQuestion && revealActive;
+    shouldAnimateQuestion && revealActive && showRevealButton;
 
   useEffect(() => {
     setHasRevealedFullQuestion(false);
@@ -187,9 +195,6 @@ export function QuestionCard({
     tossup?.category,
     tossup?.subcategory,
     tossup?.difficulty ? `Difficulty ${tossup.difficulty}` : undefined,
-    typeof tossup?.packetNumber === 'number'
-      ? `Packet ${tossup.packetNumber}`
-      : undefined,
     typeof tossup?.questionNumber === 'number'
       ? `Question ${tossup.questionNumber}`
       : undefined,
@@ -210,18 +215,22 @@ export function QuestionCard({
       lightColor={Colors.light.surface}
       darkColor={Colors.dark.surface}
       style={[styles.container, { borderColor }]}>
-      <View style={styles.metaHeader}>
-        <ThemedText type="subtitle" style={styles.title}>
-          {tossup?.setName ?? 'Random Tossup'}
-        </ThemedText>
-      </View>
-      <View style={styles.metaChips}>
-        {metaChips.map((chip, index) => (
-          <View key={`${chip}-${index}`} style={[styles.chip, { borderColor }]}>
-            <ThemedText style={styles.chipLabel}>{chip}</ThemedText>
+      {showMeta ? (
+        <>
+          <View style={styles.metaHeader}>
+            <ThemedText type="subtitle" style={styles.title}>
+              {tossup?.setName ?? 'Random Tossup'}
+            </ThemedText>
           </View>
-        ))}
-      </View>
+          <View style={styles.metaChips}>
+            {metaChips.map((chip, index) => (
+              <View key={`${chip}-${index}`} style={[styles.chip, { borderColor }]}>
+                <ThemedText style={styles.chipLabel}>{chip}</ThemedText>
+              </View>
+            ))}
+          </View>
+        </>
+      ) : null}
       <View style={styles.questionBlock}>
         {isLoading ? (
           <View style={styles.loadingState}>
@@ -309,6 +318,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1,
+    fontSize: 16,
   },
   metaChips: {
     flexDirection: 'row',
@@ -322,13 +332,14 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   chipLabel: {
-    fontSize: 12,
+    fontSize: 11,
     letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
   questionBlock: {
     flex: 1,
-    minHeight: 260,
+    minHeight: 240,
+    maxHeight: 360,
     position: 'relative',
   },
   questionScroll: {

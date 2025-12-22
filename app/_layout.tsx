@@ -4,6 +4,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
+import { MultiplayerProvider } from '@/context/MultiplayerContext';
 import { QuizSessionProvider } from '@/context/QuizSessionContext';
 import { SettingsProvider } from '@/context/SettingsContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
@@ -21,15 +22,18 @@ export default function RootLayout() {
 
   return (
     <SettingsProvider>
-      <QuizSessionProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="+not-found" />
-          </Stack>
-          <StatusBar style="auto" />
-        </ThemeProvider>
-      </QuizSessionProvider>
+      <MultiplayerProvider>
+        <QuizSessionProvider>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="multiplayer" options={{ headerShown: false }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+            <StatusBar style="auto" />
+          </ThemeProvider>
+        </QuizSessionProvider>
+      </MultiplayerProvider>
     </SettingsProvider>
   );
 }

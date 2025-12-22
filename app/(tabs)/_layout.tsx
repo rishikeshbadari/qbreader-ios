@@ -47,6 +47,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="gearshape.fill" color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="multiplayer"
+        options={{
+          title: 'Multiplayer',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.2.wave.2.fill" color={color} />,
+        }}
+      />
     </Tabs>
   );
 }
