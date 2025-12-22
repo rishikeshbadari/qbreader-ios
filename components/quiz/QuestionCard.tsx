@@ -16,6 +16,7 @@ interface Props {
   isBuzzed?: boolean;
   result?: AnswerResult;
   revealActive?: boolean;
+  onFullQuestionRevealChange?: (isRevealed: boolean) => void;
 }
 
 export function QuestionCard({
@@ -26,6 +27,7 @@ export function QuestionCard({
   isBuzzed = false,
   result,
   revealActive = true,
+  onFullQuestionRevealChange,
 }: Props) {
   const { revealSpeed } = useSettings();
   const borderColor = useThemeColor({}, 'border');
@@ -38,6 +40,7 @@ export function QuestionCard({
   const animationTimeout = useRef<NodeJS.Timeout | null>(null);
   const buzzedRef = useRef(isBuzzed);
   const questionScrollRef = useRef<ScrollView | null>(null);
+  const pendingScrollRef = useRef<'top' | 'bottom' | null>(null);
   const [hasRevealedFullQuestion, setHasRevealedFullQuestion] = useState(false);
   const wordsRef = useRef<string[]>([]);
   const revealIndexRef = useRef(0);
@@ -55,6 +58,7 @@ export function QuestionCard({
 
   useEffect(() => {
     setHasRevealedFullQuestion(false);
+    pendingScrollRef.current = null;
   }, [tossup?.id]);
 
   const clearAnimationTimeout = () => {
@@ -88,14 +92,19 @@ export function QuestionCard({
     if (showAnswer || hasRevealedFullQuestion || revealIntervalMs === 0) {
       revealIndexRef.current = words.length;
       setDisplayedQuestion(questionText);
-      if (revealIntervalMs === 0 && !hasRevealedFullQuestion) {
+      if ((showAnswer || revealIntervalMs === 0) && !hasRevealedFullQuestion) {
         setHasRevealedFullQuestion(true);
       }
       return;
     }
 
-    revealIndexRef.current = 0;
-    setDisplayedQuestion('');
+    if (shouldAnimateQuestion && words.length > 0) {
+      revealIndexRef.current = 1;
+      setDisplayedQuestion(words[0]);
+    } else {
+      revealIndexRef.current = 0;
+      setDisplayedQuestion('');
+    }
   }, [
     tossup?.id,
     tossup?.question,
@@ -104,6 +113,7 @@ export function QuestionCard({
     showAnswer,
     hasRevealedFullQuestion,
     revealIntervalMs,
+    shouldAnimateQuestion,
   ]);
 
   useEffect(() => {
@@ -113,6 +123,7 @@ export function QuestionCard({
     }
 
     if (revealIndexRef.current >= wordsRef.current.length) {
+      setHasRevealedFullQuestion((prev) => (prev ? prev : true));
       clearAnimationTimeout();
       return;
     }
@@ -130,6 +141,8 @@ export function QuestionCard({
 
       if (revealIndexRef.current < wordsRef.current.length && !buzzedRef.current) {
         animationTimeout.current = setTimeout(revealNextWord, revealIntervalMs);
+      } else if (revealIndexRef.current >= wordsRef.current.length) {
+        setHasRevealedFullQuestion((prev) => (prev ? prev : true));
       }
     };
 
@@ -138,7 +151,7 @@ export function QuestionCard({
     return () => {
       clearAnimationTimeout();
     };
-  }, [isRevealRunning]);
+  }, [isRevealRunning, tossup?.id, revealIntervalMs]);
 
   useEffect(() => {
     if (!questionScrollRef.current) {
@@ -151,6 +164,24 @@ export function QuestionCard({
       questionScrollRef.current.scrollTo({ y: 0, animated: false });
     }
   }, [displayedQuestion, isRevealRunning]);
+
+  useEffect(() => {
+    if (!questionScrollRef.current) {
+      return;
+    }
+
+    if (showAnswer || hasRevealedFullQuestion) {
+      questionScrollRef.current.scrollToEnd({ animated: true });
+      pendingScrollRef.current = 'bottom';
+    } else if (pendingScrollRef.current !== 'top') {
+      questionScrollRef.current.scrollTo({ y: 0, animated: true });
+      pendingScrollRef.current = 'top';
+    }
+  }, [showAnswer, hasRevealedFullQuestion]);
+
+  useEffect(() => {
+    onFullQuestionRevealChange?.(hasRevealedFullQuestion);
+  }, [hasRevealedFullQuestion, onFullQuestionRevealChange]);
 
   const metaChips = [
     tossup?.category,
@@ -205,14 +236,37 @@ export function QuestionCard({
           <ScrollView
             ref={questionScrollRef}
             style={styles.questionScroll}
-            contentContainerStyle={styles.questionScrollContent}
+            contentContainerStyle={[
+              styles.questionScrollContent,
+              canShowRevealButton && styles.questionScrollWithButton,
+            ]}
             showsVerticalScrollIndicator={false}>
             <ThemedText style={styles.questionBody}>
               {shouldAnimateQuestion
-                ? displayedQuestion || '…'
+                ? displayedQuestion
                 : tossup?.question ??
                   'Tap “Next Tossup” to start practicing with a random clue.'}
             </ThemedText>
+            {showAnswer ? (
+              <View style={styles.answerBlock}>
+                <View style={styles.answerHeader}>
+                  <ThemedText type="subtitle" style={styles.answerLabel}>
+                    Answer
+                  </ThemedText>
+                  {result ? (
+                    <ThemedText
+                      type="defaultSemiBold"
+                      style={[
+                        styles.answerResult,
+                        { color: getResultColor(result, successColor, warningColor, errorColor, brandColor) },
+                      ]}>
+                      {getResultLabel(result)}
+                    </ThemedText>
+                  ) : null}
+                </View>
+                <ThemedText type="defaultSemiBold">{tossup?.answer}</ThemedText>
+              </View>
+            ) : null}
           </ScrollView>
         )}
         {canShowRevealButton ? (
@@ -230,32 +284,13 @@ export function QuestionCard({
           </Pressable>
         ) : null}
       </View>
-      {showAnswer && (
-        <View style={styles.answerBlock}>
-          <View style={styles.answerHeader}>
-            <ThemedText type="subtitle" style={styles.answerLabel}>
-              Answer
-            </ThemedText>
-            {result ? (
-              <ThemedText
-                type="defaultSemiBold"
-                style={[
-                  styles.answerResult,
-                  { color: getResultColor(result, successColor, warningColor, errorColor, brandColor) },
-                ]}>
-                {getResultLabel(result)}
-              </ThemedText>
-            ) : null}
-          </View>
-          <ThemedText type="defaultSemiBold">{tossup?.answer}</ThemedText>
-        </View>
-      )}
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     borderWidth: 1,
     borderRadius: 24,
     padding: 20,
@@ -292,7 +327,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   questionBlock: {
-    height: 300,
+    flex: 1,
+    minHeight: 260,
     position: 'relative',
   },
   questionScroll: {
@@ -300,6 +336,9 @@ const styles = StyleSheet.create({
   },
   questionScrollContent: {
     paddingRight: 6,
+  },
+  questionScrollWithButton: {
+    paddingBottom: 56,
   },
   questionBody: {
     fontSize: 17,

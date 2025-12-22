@@ -34,7 +34,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
   const abortRef = useRef<AbortController | null>(null);
   const prefetchAbortRef = useRef<AbortController | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<Tossup>();
-  const [nextQuestion, setNextQuestion] = useState<Tossup>();
+  const [nextQuestions, setNextQuestions] = useState<Tossup[]>([]);
   const [loadingQuestion, setLoadingQuestion] = useState(false);
   const [history, setHistory] = useState<SessionHistoryEntry[]>([]);
   const [error, setError] = useState<string>();
@@ -50,24 +50,45 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     };
   }, [selectedCategories, selectedDifficulties]);
 
-  const primeNextQuestion = useCallback(async () => {
-    prefetchAbortRef.current?.abort();
-    const prefetchController = new AbortController();
-    prefetchAbortRef.current = prefetchController;
-
-    try {
-      const tossup = await fetchRandomTossup(prefetchController.signal, buildFilters());
-      setNextQuestion(tossup);
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        return;
-      }
-      console.error('Failed to prefetch tossup', err);
-    }
-  }, [buildFilters]);
+  const nextQuestionsRef = useRef<Tossup[]>([]);
 
   useEffect(() => {
-    void primeNextQuestion();
+    nextQuestionsRef.current = nextQuestions;
+  }, [nextQuestions]);
+
+  const primeNextQuestion = useCallback(
+    async (desiredLength = 2, existingLength?: number) => {
+      prefetchAbortRef.current?.abort();
+      const prefetchController = new AbortController();
+      prefetchAbortRef.current = prefetchController;
+
+      try {
+        const currentLength =
+          typeof existingLength === 'number'
+            ? existingLength
+            : nextQuestionsRef.current.length;
+        const needed = desiredLength - currentLength;
+        if (needed <= 0) {
+          return;
+        }
+        const incoming: Tossup[] = [];
+        for (let i = 0; i < needed; i += 1) {
+          const tossup = await fetchRandomTossup(prefetchController.signal, buildFilters());
+          incoming.push(tossup);
+        }
+        setNextQuestions((prev) => [...prev, ...incoming]);
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') {
+          return;
+        }
+        console.error('Failed to prefetch tossup', err);
+      }
+    },
+    [buildFilters]
+  );
+
+  useEffect(() => {
+    void primeNextQuestion(2);
 
     return () => {
       prefetchAbortRef.current?.abort();
@@ -75,8 +96,10 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
   }, [primeNextQuestion]);
 
   useEffect(() => {
-    setNextQuestion(undefined);
-  }, [selectedCategories, selectedDifficulties]);
+    setNextQuestions([]);
+    setCurrentQuestion(undefined);
+    void primeNextQuestion(2, 0);
+  }, [selectedCategories, selectedDifficulties, primeNextQuestion]);
 
   const loadNextQuestion = useCallback(async () => {
     abortRef.current?.abort();
@@ -87,11 +110,11 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     setError(undefined);
     setLastResult(undefined);
 
-    if (nextQuestion) {
-      setCurrentQuestion(nextQuestion);
-      setNextQuestion(undefined);
+    if (nextQuestions.length > 0) {
+      setCurrentQuestion(nextQuestions[0]);
+      setNextQuestions((prev) => prev.slice(1));
       setLoadingQuestion(false);
-      void primeNextQuestion();
+      void primeNextQuestion(2, nextQuestions.length - 1);
       return;
     }
 
@@ -100,7 +123,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     try {
       const tossup = await fetchRandomTossup(abortController.signal, buildFilters());
       setCurrentQuestion(tossup);
-      void primeNextQuestion();
+      void primeNextQuestion(2);
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
         return;
@@ -115,7 +138,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     } finally {
       setLoadingQuestion(false);
     }
-  }, [buildFilters, nextQuestion, primeNextQuestion]);
+  }, [buildFilters, nextQuestions, primeNextQuestion]);
 
   const judgeAnswer = useCallback(
     (answer: string) => {

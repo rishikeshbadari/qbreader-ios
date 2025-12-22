@@ -1,13 +1,16 @@
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Slider from '@react-native-community/slider';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
 
+const CONTENT_PADDING = 20;
+
 export default function SettingsScreen() {
+  const insets = useSafeAreaInsets();
   const {
     availableDifficulties,
     availableCategories,
@@ -92,7 +95,11 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: CONTENT_PADDING + insets.bottom },
+        ]}>
         <ThemedView style={styles.section}>
           <ThemedText type="title">Settings</ThemedText>
           <ThemedText style={styles.subtitle}>
@@ -190,7 +197,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 20,
+    padding: CONTENT_PADDING,
     gap: 20,
   },
   section: {
