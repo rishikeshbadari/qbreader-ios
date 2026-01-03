@@ -1,9 +1,9 @@
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
-import { BlurView } from 'expo-blur';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Keyboard,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   StyleSheet,
@@ -73,9 +73,10 @@ export default function PlayScreen() {
     if (!hasBuzzed) submittedRef.current = false;
   }, [hasBuzzed]);
 
-  // Auto-submit empty answer when keyboard hides
+  // Auto-submit empty answer when keyboard hides (use willHide on iOS for faster response)
   useEffect(() => {
-    const sub = Keyboard.addListener('keyboardDidHide', () => {
+    const eventName = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const sub = Keyboard.addListener(eventName, () => {
       if (
         playStateRef.current !== 'active' ||
         !hasBuzzedRef.current ||
@@ -180,116 +181,123 @@ export default function PlayScreen() {
   const contentPaddingBottom = spacing.lg + (Platform.OS === 'ios' ? tabBarHeight : 0) + insets.bottom;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ThemedView style={styles.container}>
-        {/* Main content - always static */}
-        <View style={[styles.content, { paddingBottom: contentPaddingBottom }]}>
-          {/* Header */}
-          <View style={styles.header}>
-            <ThemedText type="title">QuizBowl Practice</ThemedText>
-            <ThemedText style={styles.subtitle}>
-              Powered by QBReader — fresh tossups every time you buzz.
-            </ThemedText>
-          </View>
+    <View style={styles.rootContainer}>
+      <SafeAreaView style={styles.safeArea}>
+        <ThemedView style={styles.container}>
+          {/* Main content - always static */}
+          <View style={[styles.content, { paddingBottom: contentPaddingBottom }]}>
+            {/* Header */}
+            <View style={styles.header}>
+              <ThemedText type="title">QuizBowl Practice</ThemedText>
+              <ThemedText style={styles.subtitle}>
+                Powered by QBReader — fresh tossups every time you buzz.
+              </ThemedText>
+            </View>
 
-          {/* Question Card */}
-          <View style={styles.questionWrapper}>
-            <QuestionCard
-              tossup={currentQuestion}
-              isLoading={loadingQuestion}
-              error={error}
-              showAnswer={Boolean(lastResult)}
-              isBuzzed={hasBuzzed}
-              result={lastResult}
-              revealActive={playState === 'active'}
-              onFullQuestionRevealChange={setHasFullyRevealedQuestion}
-            />
+            {/* Question Card */}
+            <View style={styles.questionWrapper}>
+              <QuestionCard
+                tossup={currentQuestion}
+                isLoading={loadingQuestion}
+                error={error}
+                showAnswer={Boolean(lastResult)}
+                isBuzzed={hasBuzzed}
+                result={lastResult}
+                revealActive={playState === 'active'}
+                onFullQuestionRevealChange={setHasFullyRevealedQuestion}
+              />
 
-            {/* Play/Pause overlay */}
-            {showPlayOverlay && (
+              {/* Play/Pause overlay */}
+              {showPlayOverlay && (
+                <Pressable
+                  onPress={handlePlayOverlayPress}
+                  style={({ pressed }) => [
+                    styles.playOverlay,
+                    { backgroundColor: overlayBackground, opacity: pressed ? 0.9 : 1 },
+                  ]}>
+                  <ThemedText type="defaultSemiBold" style={[styles.playOverlayLabel, { color: overlayTextColor }]}>
+                    {playState === 'paused' ? 'Tap to Continue' : 'Tap to Play'}
+                  </ThemedText>
+                </Pressable>
+              )}
+            </View>
+
+            {/* Action buttons - always visible */}
+            <View style={styles.actions}>
               <Pressable
-                onPress={handlePlayOverlayPress}
+                onPress={handleBuzz}
+                disabled={!currentQuestion || loadingQuestion || hasBuzzed || Boolean(lastResult) || controlsDisabled}
                 style={({ pressed }) => [
-                  styles.playOverlay,
-                  { backgroundColor: overlayBackground, opacity: pressed ? 0.9 : 1 },
+                  styles.buzzButton,
+                  {
+                    backgroundColor: dangerColor,
+                    opacity: !currentQuestion || loadingQuestion ? 0.25 : hasBuzzed || lastResult ? 0.6 : pressed ? 0.9 : 1,
+                  },
                 ]}>
-                <ThemedText type="defaultSemiBold" style={[styles.playOverlayLabel, { color: overlayTextColor }]}>
-                  {playState === 'paused' ? 'Tap to Continue' : 'Tap to Play'}
+                <ThemedText type="defaultSemiBold" style={styles.actionLabel}>Buzz</ThemedText>
+              </Pressable>
+
+              <Pressable
+                onPress={handlePrimaryAction}
+                disabled={!currentQuestion || loadingQuestion || controlsDisabled}
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  {
+                    borderColor,
+                    borderWidth: buttonMode === 'next' ? 0 : 1,
+                    backgroundColor: buttonMode === 'next' ? brandColor : 'transparent',
+                    opacity: !currentQuestion || loadingQuestion ? 0.4 : pressed ? 0.7 : 1,
+                  },
+                ]}>
+                <ThemedText
+                  type="defaultSemiBold"
+                  style={[styles.secondaryLabel, { color: buttonMode === 'next' ? '#fff' : skipTextColor }]}>
+                  {buttonMode === 'next' ? 'Next' : buttonMode === 'show-answer' ? 'Show Answer' : 'Skip'}
                 </ThemedText>
+              </Pressable>
+            </View>
+
+            {/* Extra info */}
+            {lastResult?.directedPrompt && (
+              <ThemedText style={styles.prompt}>Directed prompt: {lastResult.directedPrompt}</ThemedText>
+            )}
+            {error && (
+              <Pressable onPress={handleRetry}>
+                <ThemedText style={styles.error}>{error} Tap to try again.</ThemedText>
               </Pressable>
             )}
           </View>
+        </ThemedView>
+      </SafeAreaView>
 
-          {/* Action buttons - always visible */}
-          <View style={styles.actions}>
-            <Pressable
-              onPress={handleBuzz}
-              disabled={!currentQuestion || loadingQuestion || hasBuzzed || Boolean(lastResult) || controlsDisabled}
-              style={({ pressed }) => [
-                styles.buzzButton,
-                {
-                  backgroundColor: dangerColor,
-                  opacity: !currentQuestion || loadingQuestion ? 0.25 : hasBuzzed || lastResult ? 0.6 : pressed ? 0.9 : 1,
-                },
-              ]}>
-              <ThemedText type="defaultSemiBold" style={styles.actionLabel}>Buzz</ThemedText>
-            </Pressable>
-
-            <Pressable
-              onPress={handlePrimaryAction}
-              disabled={!currentQuestion || loadingQuestion || controlsDisabled}
-              style={({ pressed }) => [
-                styles.secondaryButton,
-                {
-                  borderColor,
-                  borderWidth: buttonMode === 'next' ? 0 : 1,
-                  backgroundColor: buttonMode === 'next' ? brandColor : 'transparent',
-                  opacity: !currentQuestion || loadingQuestion ? 0.4 : pressed ? 0.7 : 1,
-                },
-              ]}>
-              <ThemedText
-                type="defaultSemiBold"
-                style={[styles.secondaryLabel, { color: buttonMode === 'next' ? '#fff' : skipTextColor }]}>
-                {buttonMode === 'next' ? 'Next' : buttonMode === 'show-answer' ? 'Show Answer' : 'Skip'}
-              </ThemedText>
-            </Pressable>
-          </View>
-
-          {/* Extra info */}
-          {lastResult?.directedPrompt && (
-            <ThemedText style={styles.prompt}>Directed prompt: {lastResult.directedPrompt}</ThemedText>
-          )}
-          {error && (
-            <Pressable onPress={handleRetry}>
-              <ThemedText style={styles.error}>{error} Tap to try again.</ThemedText>
-            </Pressable>
-          )}
-        </View>
-
-        {/* Answer overlay - appears on top when buzzing */}
-        {isAnswering && (
-          <BlurView intensity={80} tint={colorScheme === 'dark' ? 'dark' : 'light'} style={styles.answerOverlay}>
-            <Pressable style={styles.answerOverlayTouchable} onPress={Keyboard.dismiss}>
-              <View style={styles.answerContainer}>
-                <ThemedText type="subtitle" style={styles.answerTitle}>Your Answer</ThemedText>
-                <AnswerInput
-                  value={answer}
-                  onChangeText={setAnswer}
-                  onSubmit={handleSubmit}
-                  disabled={!currentQuestion || loadingQuestion}
-                  autoFocus
-                />
-                <ThemedText style={styles.answerHint}>Press return to submit</ThemedText>
-              </View>
-            </Pressable>
-          </BlurView>
-        )}
-      </ThemedView>
-    </SafeAreaView>
+      {/* Answer overlay - outside SafeAreaView for proper keyboard handling */}
+      {isAnswering && (
+        <KeyboardAvoidingView 
+          behavior="padding" 
+          style={[
+            styles.answerOverlay, 
+            { backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.5)' }
+          ]}
+          keyboardVerticalOffset={0}
+        >
+          <Pressable style={styles.answerOverlayTouchable} onPress={Keyboard.dismiss} />
+          <AnswerInput
+            value={answer}
+            onChangeText={setAnswer}
+            onSubmit={handleSubmit}
+            disabled={!currentQuestion || loadingQuestion}
+            autoFocus
+          />
+        </KeyboardAvoidingView>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+  },
   safeArea: {
     flex: 1,
   },
@@ -362,25 +370,9 @@ const styles = StyleSheet.create({
   // Answer overlay styles
   answerOverlay: {
     ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
   },
   answerOverlayTouchable: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.lg,
-  },
-  answerContainer: {
-    width: '100%',
-    maxWidth: 400,
-    gap: spacing.md,
-  },
-  answerTitle: {
-    textAlign: 'center',
-    fontSize: responsiveFont(20),
-  },
-  answerHint: {
-    textAlign: 'center',
-    opacity: 0.6,
-    fontSize: responsiveFont(14),
   },
 });

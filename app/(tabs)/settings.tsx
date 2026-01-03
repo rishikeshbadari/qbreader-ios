@@ -1,17 +1,22 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import Slider from '@react-native-community/slider';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
-import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
+import { responsiveFont, scale, spacing, verticalScale, deviceMetrics } from '@/utils/responsive';
 
-const CONTENT_PADDING = spacing.lg;
+// Dynamic spacing based on screen height
+const isCompactScreen = deviceMetrics.height < 700;
+const dynamicGap = isCompactScreen ? verticalScale(8) : verticalScale(12);
+const sectionPadding = isCompactScreen ? spacing.md : spacing.lg;
+const chipPaddingV = isCompactScreen ? verticalScale(6) : verticalScale(8);
 
 export default function SettingsScreen() {
-  const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const {
     availableDifficulties,
     availableCategories,
@@ -59,7 +64,6 @@ export default function SettingsScreen() {
             },
           ]}>
           <ThemedText
-            type="defaultSemiBold"
             style={[styles.chipLabel, { color: isSelected ? '#fff' : textColor }]}>
             {option.label}
           </ThemedText>
@@ -82,7 +86,6 @@ export default function SettingsScreen() {
             },
           ]}>
           <ThemedText
-            type="defaultSemiBold"
             style={[styles.chipLabel, { color: isSelected ? '#fff' : textColor }]}>
             {category.name}
           </ThemedText>
@@ -96,22 +99,19 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: CONTENT_PADDING + insets.bottom },
-        ]}>
-        <ThemedView style={styles.section}>
+      <View style={[styles.content, { paddingBottom: tabBarHeight }]}>
+        {/* Header */}
+        <View style={styles.header}>
           <ThemedText type="title">Settings</ThemedText>
           <ThemedText style={styles.subtitle}>
-            Difficulty and category filters update the requests we send to QBReader&apos;s
-            public API before each tossup.
+            Configure question difficulty and categories.
           </ThemedText>
-        </ThemedView>
+        </View>
 
+        {/* Reveal Speed */}
         <ThemedView style={styles.section}>
           <View style={styles.sectionHeader}>
-            <ThemedText type="subtitle">Question reveal speed</ThemedText>
+            <ThemedText type="subtitle" style={styles.sectionTitle}>Reveal Speed</ThemedText>
             <ThemedText style={[styles.speedLabel, { color: mutedColor }]}>
               {revealSpeedLabel}
             </ThemedText>
@@ -125,12 +125,8 @@ export default function SettingsScreen() {
             minimumTrackTintColor={brandColor}
             maximumTrackTintColor={borderColor}
             thumbTintColor={brandColor}
-            accessibilityLabel="Question reveal speed"
+            style={styles.slider}
           />
-          <View style={styles.speedLegends}>
-            <ThemedText style={[styles.speedLegend, { color: mutedColor }]}>Very slow</ThemedText>
-            <ThemedText style={[styles.speedLegend, { color: mutedColor }]}>Instant</ThemedText>
-          </View>
         </ThemedView>
 
         {loadError ? (
@@ -144,17 +140,18 @@ export default function SettingsScreen() {
           </ThemedView>
         ) : null}
 
+        {/* Difficulty */}
         <ThemedView style={styles.section}>
           <View style={styles.sectionHeader}>
-            <ThemedText type="subtitle">Difficulty</ThemedText>
-            <Pressable onPress={selectAllDifficulties}>
-              <ThemedText type="defaultSemiBold" style={styles.actionLink}>
+            <ThemedText type="subtitle" style={styles.sectionTitle}>Difficulty</ThemedText>
+            <Pressable onPress={selectAllDifficulties} hitSlop={8}>
+              <ThemedText style={[styles.actionLink, { color: brandColor }]}>
                 Select all
               </ThemedText>
             </Pressable>
           </View>
           {showDifficultyPlaceholder ? (
-            <ActivityIndicator style={styles.loadingIndicator} />
+            <ActivityIndicator />
           ) : (
             <View style={styles.chipGrid}>{renderDifficultyChips()}</View>
           )}
@@ -163,17 +160,18 @@ export default function SettingsScreen() {
           ) : null}
         </ThemedView>
 
-        <ThemedView style={styles.section}>
+        {/* Categories */}
+        <ThemedView style={[styles.section, styles.categoriesSection]}>
           <View style={styles.sectionHeader}>
-            <ThemedText type="subtitle">Categories</ThemedText>
-            <Pressable onPress={selectAllCategories}>
-              <ThemedText type="defaultSemiBold" style={styles.actionLink}>
+            <ThemedText type="subtitle" style={styles.sectionTitle}>Categories</ThemedText>
+            <Pressable onPress={selectAllCategories} hitSlop={8}>
+              <ThemedText style={[styles.actionLink, { color: brandColor }]}>
                 Select all
               </ThemedText>
             </Pressable>
           </View>
           {showCategoryPlaceholder ? (
-            <ActivityIndicator style={styles.loadingIndicator} />
+            <ActivityIndicator />
           ) : (
             <View style={styles.chipGrid}>{renderCategoryChips()}</View>
           )}
@@ -184,11 +182,11 @@ export default function SettingsScreen() {
 
         {loadingOptions && !showDifficultyPlaceholder && !showCategoryPlaceholder ? (
           <View style={styles.loadingRow}>
-            <ActivityIndicator />
-            <ThemedText style={styles.loadingLabel}>Refreshing filters…</ThemedText>
+            <ActivityIndicator size="small" />
+            <ThemedText style={styles.loadingLabel}>Refreshing…</ThemedText>
           </View>
         ) : null}
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -198,54 +196,57 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: CONTENT_PADDING,
-    gap: spacing.lg,
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    gap: dynamicGap,
   },
-  section: {
-    borderRadius: scale(20),
-    padding: spacing.lg,
-    gap: spacing.md,
+  header: {
+    gap: spacing.xs,
   },
   subtitle: {
-    opacity: 0.8,
+    opacity: 0.7,
+    fontSize: responsiveFont(14),
+  },
+  section: {
+    borderRadius: scale(16),
+    padding: sectionPadding,
+    gap: spacing.sm,
+  },
+  categoriesSection: {
+    flex: 1,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: spacing.sm,
+  },
+  sectionTitle: {
+    fontSize: responsiveFont(16),
   },
   speedLabel: {
-    opacity: 0.8,
+    fontSize: responsiveFont(14),
   },
-  speedLegends: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  speedLegend: {
-    fontSize: responsiveFont(12),
-    opacity: 0.8,
+  slider: {
+    marginHorizontal: -spacing.xs,
   },
   chipGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   chip: {
-    borderWidth: scale(1),
-    borderRadius: 999,
-    paddingHorizontal: spacing.md + scale(2),
-    paddingVertical: verticalScale(10),
-    minHeight: MIN_TOUCH_TARGET,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(8),
+    paddingHorizontal: spacing.sm,
+    paddingVertical: chipPaddingV,
   },
   chipLabel: {
-    letterSpacing: 0.3,
+    fontSize: responsiveFont(13),
   },
   actionLink: {
-    opacity: 0.8,
-  },
-  loadingIndicator: {
-    marginTop: spacing.lg,
+    fontSize: responsiveFont(14),
+    fontWeight: '600',
   },
   loadingRow: {
     flexDirection: 'row',
@@ -254,26 +255,25 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   loadingLabel: {
-    opacity: 0.8,
+    opacity: 0.7,
+    fontSize: responsiveFont(13),
   },
   errorCard: {
     borderWidth: scale(1),
   },
   errorText: {
     color: '#DC2626',
+    fontSize: responsiveFont(14),
   },
   errorMessage: {
-    marginTop: spacing.sm,
     color: '#DC2626',
-    fontWeight: '600',
+    fontSize: responsiveFont(13),
   },
   refreshButton: {
     alignSelf: 'flex-start',
     borderWidth: scale(1),
-    borderRadius: 999,
-    paddingHorizontal: spacing.lg,
+    borderRadius: scale(8),
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
-    marginTop: spacing.xs,
-    minHeight: MIN_TOUCH_TARGET,
   },
 });
