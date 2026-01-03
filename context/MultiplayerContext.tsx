@@ -18,7 +18,7 @@ import type {
   MultiplayerSessionSummary,
   MultiplayerQuestionRecord,
 } from '@/types/multiplayer';
-import { createTransport } from '@/services/multiplayer/transport';
+import { createTransport, type MultiplayerTransport } from '@/services/multiplayer/transport';
 import { fetchRandomTossup } from '@/services/qbreader';
 import checkAnswer from 'qb-answer-checker';
 import type { AnswerResult, Tossup } from '@/types/qb';
@@ -35,6 +35,9 @@ type MultiplayerContextValue = {
   buzzLocked: boolean;
   hostSession: (settings: MultiplayerSettings, playerName: string) => Promise<string>;
   joinSession: (sessionId: string, playerName: string) => Promise<void>;
+  lockForBuzz: () => Promise<void>;
+  pauseSession: () => Promise<void>;
+  updateSettings: (next: MultiplayerSettings) => void;
   startNextQuestion: () => Promise<void>;
   submitBuzz: (answer: string) => Promise<void>;
   endSession: () => Promise<void>;
@@ -43,7 +46,7 @@ type MultiplayerContextValue = {
 const MultiplayerContext = createContext<MultiplayerContextValue | undefined>(undefined);
 
 export function MultiplayerProvider({ children }: PropsWithChildren) {
-  const transportRef = useRef(createTransport());
+  const transportRef = useRef<MultiplayerTransport>(createTransport());
   const selfPlayerRef = useRef<MultiplayerPlayer | null>(null);
   const playersRef = useRef<MultiplayerPlayer[]>([]);
   const settingsRef = useRef<MultiplayerSettings>();
@@ -60,6 +63,40 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const [loadingQuestion, setLoadingQuestion] = useState(false);
   const [buzzLocked, setBuzzLocked] = useState(false);
 
+  const resetState = useCallback(() => {
+    selfPlayerRef.current = null;
+    playersRef.current = [];
+    settingsRef.current = undefined;
+    currentQuestionRef.current = undefined;
+    currentResultRef.current = undefined;
+
+    setSessionId(null);
+    setStatus('idle');
+    setPlayers([]);
+    setSettings(undefined);
+    setSummary(undefined);
+    setCurrentQuestion(undefined);
+    setCurrentResult(undefined);
+    setLoadingQuestion(false);
+    setBuzzLocked(false);
+  }, []);
+
+  const resetTransport = useCallback(async () => {
+    await transportRef.current.disconnect();
+    transportRef.current = createTransport();
+  }, []);
+
+  const sendEvent = useCallback(
+    async (event: MultiplayerEvent) => {
+      try {
+        await transportRef.current.send(event);
+      } catch (err) {
+        console.error('Multiplayer transport send failed', err);
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     playersRef.current = players;
   }, [players]);
@@ -75,6 +112,13 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     currentResultRef.current = currentResult;
   }, [currentResult]);
+
+  useEffect(
+    () => () => {
+      void resetTransport();
+    },
+    [resetTransport]
+  );
 
   const computeCoordinatorId = useCallback((list: MultiplayerPlayer[]) => {
     if (list.length === 0) return null;
@@ -112,6 +156,10 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       ensureSummary();
       setSummary((prev) => {
         if (!prev) return prev;
+        const lastQuestion = prev.questions[prev.questions.length - 1];
+        if (lastQuestion?.question.id && tossup.id && lastQuestion.question.id === tossup.id) {
+          return prev;
+        }
         return {
           ...prev,
           questions: [...prev.questions, { question: tossup, buzzes: [] }],
@@ -127,9 +175,16 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       const updatedQuestions = [...prev.questions];
       const idx = updatedQuestions.length - 1;
       const question = updatedQuestions[idx];
+      const existingIndex = question.buzzes.findIndex(
+        (existing) => existing.playerId === buzz.playerId && existing.timestamp === buzz.timestamp
+      );
+      const buzzes =
+        existingIndex >= 0
+          ? question.buzzes.map((existing, i) => (i === existingIndex ? { ...existing, ...buzz } : existing))
+          : [...question.buzzes, buzz];
       updatedQuestions[idx] = {
         ...question,
-        buzzes: [...question.buzzes, buzz],
+        buzzes,
         winnerId: winnerId ?? question.winnerId,
       };
       return { ...prev, questions: updatedQuestions };
@@ -154,11 +209,11 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       setCurrentQuestion(tossup);
       addQuestionToSummary(tossup);
       setStatus('in_progress');
-      await transportRef.current.send({
+      await sendEvent({
         type: 'session:start',
         payload: { settings: activeSettings, seed: nanoid(6) },
       });
-      await transportRef.current.send({
+      await sendEvent({
         type: 'question:new',
         payload: { tossup, seed: tossup.id ?? nanoid(6) },
       });
@@ -167,7 +222,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     } finally {
       setLoadingQuestion(false);
     }
-  }, [addQuestionToSummary, ensureSummary]);
+  }, [addQuestionToSummary, ensureSummary, sendEvent]);
 
   const handleIncomingBuzz = useCallback(
     async (buzz: MultiplayerQuestionRecord['buzzes'][number]) => {
@@ -178,6 +233,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       if (currentResultRef.current) {
         return;
       }
+      await sendEvent({ type: 'buzz:lock', payload: { playerId: buzz.playerId } });
       const result = checkAnswer(
         currentQuestionRef.current.answerHtml || currentQuestionRef.current.answer,
         buzz.answer.trim()
@@ -185,9 +241,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       const payload = { ...buzz, result };
       setCurrentResult(result);
       appendBuzzToSummary(payload, buzz.playerId);
-      await transportRef.current.send({ type: 'buzz:result', payload });
+      await sendEvent({ type: 'buzz:result', payload });
     },
-    [appendBuzzToSummary, isSelfCoordinator]
+    [appendBuzzToSummary, isSelfCoordinator, sendEvent]
   );
 
   const handleEvent = useCallback(
@@ -207,13 +263,13 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         });
         const mergedPlayers = nextPlayers ?? playersRef.current;
         if (isSelfCoordinator(mergedPlayers) && settingsRef.current) {
-          void transportRef.current.send({ type: 'players:sync', payload: { players: mergedPlayers } });
-          void transportRef.current.send({
+          void sendEvent({ type: 'players:sync', payload: { players: mergedPlayers } });
+          void sendEvent({
             type: 'session:start',
             payload: { settings: settingsRef.current, seed: currentQuestionRef.current?.id ?? nanoid(6) },
           });
           if (currentQuestionRef.current) {
-            void transportRef.current.send({
+            void sendEvent({
               type: 'question:new',
               payload: { tossup: currentQuestionRef.current, seed: currentQuestionRef.current.id ?? nanoid(6) },
             });
@@ -272,10 +328,22 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         return;
       }
 
+      if (event.type === 'session:pause') {
+        setStatus('lobby');
+        setBuzzLocked(true);
+        setCurrentResult(undefined);
+        return;
+      }
+
       if (event.type === 'session:end') {
         setStatus('ended');
         setBuzzLocked(true);
         setSummary((prev) => (prev ? { ...prev, endedAt: Date.now() } : prev));
+        return;
+      }
+
+      if (event.type === 'buzz:lock') {
+        setBuzzLocked(true);
         return;
       }
 
@@ -302,7 +370,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         return;
       }
     },
-    [addQuestionToSummary, appendBuzzToSummary, ensureSummary, isSelfCoordinator, loadingQuestion, performStartNextQuestion]
+    [addQuestionToSummary, appendBuzzToSummary, ensureSummary, isSelfCoordinator, loadingQuestion, performStartNextQuestion, sendEvent]
   );
 
   const handleEventWithBuzz = useCallback(
@@ -322,6 +390,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
   const hostSession = useCallback(
     async (nextSettings: MultiplayerSettings, playerName: string) => {
+      await resetTransport();
+      resetState();
       const id = nanoid(8);
       const player: MultiplayerPlayer = { id: nanoid(6), name: playerName || 'Player' };
       selfPlayerRef.current = player;
@@ -342,14 +412,16 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         onError: (err) => console.error('Multiplayer transport error', err),
         onPeerChange: () => {},
       });
-      await transportRef.current.send({ type: 'player:joined', payload: player });
+      await sendEvent({ type: 'player:joined', payload: player });
       return id;
     },
-    [handleEventWithBuzz]
+    [handleEventWithBuzz, resetState, resetTransport, sendEvent]
   );
 
   const joinSession = useCallback(
     async (id: string, playerName: string) => {
+      await resetTransport();
+      resetState();
       const player: MultiplayerPlayer = { id: nanoid(6), name: playerName || 'Player' };
       selfPlayerRef.current = player;
       setSessionId(id);
@@ -361,23 +433,48 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         onError: (err) => console.error('Multiplayer transport error', err),
         onPeerChange: () => {},
       });
-      await transportRef.current.send({ type: 'player:joined', payload: player });
+      await sendEvent({ type: 'player:joined', payload: player });
     },
-    [handleEventWithBuzz]
+    [handleEventWithBuzz, resetState, resetTransport, sendEvent]
+  );
+
+  const lockForBuzz = useCallback(async () => {
+    if (buzzLocked || status !== 'in_progress') return;
+    setBuzzLocked(true);
+    const playerId = selfPlayerRef.current?.id ?? 'player';
+    await sendEvent({ type: 'buzz:lock', payload: { playerId } });
+  }, [buzzLocked, sendEvent, status]);
+
+  const pauseSession = useCallback(async () => {
+    setStatus('lobby');
+    setBuzzLocked(true);
+    setCurrentResult(undefined);
+    await sendEvent({ type: 'session:pause', payload: {} });
+  }, [sendEvent]);
+
+  const updateSettings = useCallback(
+    (next: MultiplayerSettings) => {
+      settingsRef.current = next;
+      setSettings(next);
+      ensureSummary(next);
+    },
+    [ensureSummary]
   );
 
   const endSession = useCallback(async () => {
     const playerId = selfPlayerRef.current?.id;
     if (playerId) {
-      await transportRef.current.send({ type: 'player:left', payload: { playerId } });
+      await sendEvent({ type: 'player:left', payload: { playerId } });
     }
-    await transportRef.current.disconnect();
+    await resetTransport();
+    setSessionId(null);
     setStatus('ended');
     setCurrentQuestion(undefined);
     setCurrentResult(undefined);
     setLoadingQuestion(false);
     setBuzzLocked(false);
-  }, []);
+    setSummary((prev) => (prev ? { ...prev, endedAt: prev.endedAt ?? Date.now() } : prev));
+  }, [resetTransport, sendEvent]);
 
   const startNextQuestion = useCallback(async () => {
     if (loadingQuestion) {
@@ -391,14 +488,14 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       return;
     }
     if (!isSelfCoordinator()) {
-      await transportRef.current.send({
+      await sendEvent({
         type: 'question:next',
         payload: { requesterId: selfPlayerRef.current?.id ?? 'player' },
       });
       return;
     }
     await performStartNextQuestion();
-  }, [isSelfCoordinator, loadingQuestion, performStartNextQuestion, settings]);
+  }, [isSelfCoordinator, loadingQuestion, performStartNextQuestion, sendEvent, settings]);
 
   const submitBuzz = useCallback(
     async (answer: string) => {
@@ -418,9 +515,13 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           answer,
           result,
         };
+        await sendEvent({
+          type: 'buzz:lock',
+          payload: { playerId: buzzPayload.playerId },
+        });
         setCurrentResult(result);
         appendBuzzToSummary(buzzPayload, buzzPayload.playerId);
-        await transportRef.current.send({ type: 'buzz:result', payload: buzzPayload });
+        await sendEvent({ type: 'buzz:result', payload: buzzPayload });
         return;
       }
       const buzzPayload: MultiplayerQuestionRecord['buzzes'][number] = {
@@ -428,9 +529,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         timestamp,
         answer,
       };
-      await transportRef.current.send({ type: 'buzz', payload: buzzPayload });
+      await sendEvent({ type: 'buzz', payload: buzzPayload });
     },
-    [appendBuzzToSummary, isSelfCoordinator]
+    [appendBuzzToSummary, isSelfCoordinator, sendEvent]
   );
 
   const value = useMemo(
@@ -446,6 +547,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       buzzLocked,
       hostSession,
       joinSession,
+      lockForBuzz,
+      pauseSession,
+      updateSettings,
       startNextQuestion,
       submitBuzz,
       endSession,
@@ -457,14 +561,17 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       endSession,
       hostSession,
       joinSession,
+      lockForBuzz,
       loadingQuestion,
       players,
+      pauseSession,
       sessionId,
       settings,
       startNextQuestion,
       status,
       submitBuzz,
       summary,
+      updateSettings,
     ]
   );
 

@@ -48,3 +48,12 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## Architecture overview
+
+- **Routing & layout**: File-based routes under `app/` with a root stack (`app/_layout.tsx`) and tab navigator in `app/(tabs)/`. Multiplayer has its own stack under `app/multiplayer/`.
+- **State providers**: `context/SettingsContext.tsx` stores filters and reveal speed with AsyncStorage; `context/QuizSessionContext.tsx` manages single-player questions/history; `context/MultiplayerContext.tsx` coordinates session state, transport, and summaries.
+- **Services**: `services/qbreader.ts` wraps QBReader API calls and normalization; `services/multiplayer/transport.ts` provides platform transports; `services/voice.ts` handles TTS.
+- **UI components**: Themed primitives in `components/Themed*`, quiz-specific UI in `components/quiz/`, and shared UI utilities in `components/ui/`.
+- **Utilities & types**: `utils/` for text and directive helpers, `types/` for API/transport shapes, and `hooks/` for context accessors and derived session stats.
+- **Responsive system**: `utils/responsive.ts` supplies scale/verticalScale/moderateScale, spacing tokens, typography helpers, and breakpoints; UI components use these helpers instead of fixed pixel values.

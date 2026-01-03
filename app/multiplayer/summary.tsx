@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useMultiplayer } from '@/context/MultiplayerContext';
+import { scale, spacing } from '@/utils/responsive';
 
 export default function MultiplayerSummaryScreen() {
   const { summary } = useMultiplayer();
@@ -65,8 +66,8 @@ export default function MultiplayerSummaryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    gap: 12,
+    padding: spacing.lg,
+    gap: spacing.md,
   },
   subtitle: {
     opacity: 0.8,
@@ -75,25 +76,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   questionCard: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    gap: 6,
+    borderWidth: scale(1),
+    borderRadius: scale(12),
+    padding: spacing.md,
+    gap: spacing.xs + scale(2),
     borderColor: '#E2E8F0',
   },
   questionText: {
     opacity: 0.9,
   },
   answerLabel: {
-    marginTop: 4,
+    marginTop: spacing.xs,
     opacity: 0.8,
   },
   answerText: {
     fontWeight: '600',
   },
   buzzes: {
-    marginTop: 6,
-    gap: 4,
+    marginTop: spacing.xs + scale(2),
+    gap: spacing.xs,
   },
   buzzEntry: {
     opacity: 0.9,
@@ -103,7 +104,7 @@ const styles = StyleSheet.create({
   },
   doneLink: {
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: spacing.sm,
     color: '#0f172a',
     fontWeight: '600',
   },

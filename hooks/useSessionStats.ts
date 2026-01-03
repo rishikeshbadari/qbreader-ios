@@ -2,7 +2,12 @@ import { useMemo } from 'react';
 
 import type { SessionStats } from '@/types/qb';
 import { useQuizSession } from '@/hooks/useQuizSession';
+import { normalizeDirective } from '@/utils/directives';
 
+/**
+ * Derive aggregate session statistics (accuracy, streaks, counts) from the
+ * current quiz session history.
+ */
 export function useSessionStats(): SessionStats {
   const { history } = useQuizSession();
 
@@ -13,7 +18,7 @@ export function useSessionStats(): SessionStats {
     let skipped = 0;
 
     history.forEach((entry) => {
-      const directive = entry.result.directive.toLowerCase();
+      const directive = normalizeDirective(entry.result);
       if (directive === 'accept') {
         correct += 1;
       } else if (directive === 'prompt') {
@@ -27,7 +32,7 @@ export function useSessionStats(): SessionStats {
 
     let streak = 0;
     for (const entry of history) {
-      const directive = entry.result.directive.toLowerCase();
+      const directive = normalizeDirective(entry.result);
       if (directive === 'accept') {
         streak += 1;
       } else {

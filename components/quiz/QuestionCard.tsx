@@ -7,6 +7,8 @@ import { Colors } from '@/constants/Colors';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import type { AnswerResult, Tossup } from '@/types/qb';
+import { directiveLabel, normalizeDirective } from '@/utils/directives';
+import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 interface Props {
   tossup?: Tossup;
@@ -20,6 +22,8 @@ interface Props {
   revealSpeedOverride?: number;
   showRevealButton?: boolean;
   showMeta?: boolean;
+  anchorToBottomOnBuzz?: boolean;
+  scrollAnchorKey?: number;
 }
 
 export function QuestionCard({
@@ -34,6 +38,8 @@ export function QuestionCard({
   revealSpeedOverride,
   showRevealButton = true,
   showMeta = true,
+  anchorToBottomOnBuzz = false,
+  scrollAnchorKey,
 }: Props) {
   const { revealSpeed } = useSettings();
   const effectiveRevealSpeed =
@@ -53,6 +59,8 @@ export function QuestionCard({
   const wordsRef = useRef<string[]>([]);
   const revealIndexRef = useRef(0);
   const revealIntervalMs = getRevealIntervalMs(effectiveRevealSpeed);
+  const scrollPaddingBottom = 0;
+  const shouldAnchorToBottom = Boolean(anchorToBottomOnBuzz && isBuzzed && !showAnswer);
   const shouldAnimateQuestion =
     Boolean(tossup?.question) &&
     !isLoading &&
@@ -62,7 +70,7 @@ export function QuestionCard({
     revealIntervalMs > 0;
   const isRevealRunning = shouldAnimateQuestion && revealActive;
   const canShowRevealButton =
-    shouldAnimateQuestion && revealActive && showRevealButton;
+    shouldAnimateQuestion && revealActive && showRevealButton && !isBuzzed;
 
   useEffect(() => {
     setHasRevealedFullQuestion(false);
@@ -114,6 +122,7 @@ export function QuestionCard({
       setDisplayedQuestion('');
     }
   }, [
+    tossup,
     tossup?.id,
     tossup?.question,
     isLoading,
@@ -166,26 +175,33 @@ export function QuestionCard({
       return;
     }
 
-    if (isRevealRunning) {
-      questionScrollRef.current.scrollToEnd({ animated: true });
+    if (isRevealRunning || shouldAnchorToBottom) {
+      questionScrollRef.current.scrollToEnd({ animated: isRevealRunning });
     } else {
       questionScrollRef.current.scrollTo({ y: 0, animated: false });
     }
-  }, [displayedQuestion, isRevealRunning]);
+  }, [displayedQuestion, isRevealRunning, shouldAnchorToBottom]);
+
+  useEffect(() => {
+    if (!questionScrollRef.current || !shouldAnchorToBottom) {
+      return;
+    }
+    requestAnimationFrame(() => questionScrollRef.current?.scrollToEnd({ animated: false }));
+  }, [scrollAnchorKey, shouldAnchorToBottom]);
 
   useEffect(() => {
     if (!questionScrollRef.current) {
       return;
     }
 
-    if (showAnswer || hasRevealedFullQuestion) {
+    if (showAnswer || hasRevealedFullQuestion || shouldAnchorToBottom) {
       questionScrollRef.current.scrollToEnd({ animated: true });
       pendingScrollRef.current = 'bottom';
     } else if (pendingScrollRef.current !== 'top') {
       questionScrollRef.current.scrollTo({ y: 0, animated: true });
       pendingScrollRef.current = 'top';
     }
-  }, [showAnswer, hasRevealedFullQuestion]);
+  }, [showAnswer, hasRevealedFullQuestion, shouldAnchorToBottom]);
 
   useEffect(() => {
     onFullQuestionRevealChange?.(hasRevealedFullQuestion);
@@ -248,7 +264,25 @@ export function QuestionCard({
             contentContainerStyle={[
               styles.questionScrollContent,
               canShowRevealButton && styles.questionScrollWithButton,
+              { paddingBottom: scrollPaddingBottom },
             ]}
+            onLayout={() => {
+              if (shouldAnchorToBottom) {
+                requestAnimationFrame(() =>
+                  questionScrollRef.current?.scrollToEnd({ animated: false })
+                );
+              }
+            }}
+            onContentSizeChange={() => {
+              if (shouldAnchorToBottom) {
+                requestAnimationFrame(() =>
+                  questionScrollRef.current?.scrollToEnd({ animated: false })
+                );
+              }
+            }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            nestedScrollEnabled
             showsVerticalScrollIndicator={false}>
             <ThemedText style={styles.questionBody}>
               {shouldAnimateQuestion
@@ -300,119 +334,107 @@ export function QuestionCard({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    borderWidth: 1,
-    borderRadius: 24,
-    padding: 20,
-    gap: 16,
+    borderWidth: scale(1),
+    borderRadius: scale(24),
+    padding: spacing.lg,
+    gap: spacing.lg,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
+    shadowOffset: { width: 0, height: scale(10) },
     shadowOpacity: 0.08,
-    shadowRadius: 25,
+    shadowRadius: scale(25),
     elevation: 4,
   },
   metaHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: spacing.md,
   },
   title: {
     flex: 1,
-    fontSize: 16,
+    fontSize: responsiveFont(16),
   },
   metaChips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.sm,
   },
   chip: {
-    borderWidth: 1,
+    borderWidth: scale(1),
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(4),
   },
   chipLabel: {
-    fontSize: 11,
+    fontSize: responsiveFont(11),
     letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
   questionBlock: {
     flex: 1,
-    minHeight: 240,
-    maxHeight: 360,
+    minHeight: verticalScale(240),
+    maxHeight: verticalScale(360),
     position: 'relative',
   },
   questionScroll: {
     flex: 1,
   },
   questionScrollContent: {
-    paddingRight: 6,
+    paddingRight: scale(6),
   },
   questionScrollWithButton: {
-    paddingBottom: 56,
+    paddingBottom: verticalScale(56),
   },
   questionBody: {
-    fontSize: 17,
-    lineHeight: 26,
+    fontSize: responsiveFont(17),
+    lineHeight: verticalScale(26),
   },
   loadingState: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: spacing.sm,
   },
   answerBlock: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 12,
-    gap: 4,
+    marginTop: spacing.sm,
+    gap: spacing.xs,
   },
   answerLabel: {
-    fontSize: 18,
+    fontSize: responsiveFont(18),
   },
   answerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: spacing.md,
   },
   answerResult: {
-    fontSize: 16,
+    fontSize: responsiveFont(16),
   },
   error: {
     color: '#DC2626',
   },
   revealButton: {
     position: 'absolute',
-    right: 10,
-    bottom: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    right: scale(10),
+    bottom: scale(10),
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(6),
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     backgroundColor: 'rgba(15, 23, 42, 0.05)',
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   revealLabel: {
-    fontSize: 12,
+    fontSize: responsiveFont(12),
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
 });
 
 function getResultLabel(result?: AnswerResult): string {
-  if (!result) {
-    return '';
-  }
-
-  const directive = result.directive.toLowerCase();
-  if (directive === 'accept') {
-    return 'Correct';
-  }
-  if (directive === 'prompt') {
-    return 'Prompt';
-  }
-  if (directive === 'skip') {
-    return 'Skipped';
-  }
-  return 'Incorrect';
+  return result ? directiveLabel(result) : '';
 }
 
 function getResultColor(
@@ -422,11 +444,7 @@ function getResultColor(
   errorColor: string,
   brandColor: string
 ): string {
-  if (!result) {
-    return brandColor;
-  }
-
-  const directive = result.directive.toLowerCase();
+  const directive = normalizeDirective(result);
   if (directive === 'accept') {
     return successColor;
   }

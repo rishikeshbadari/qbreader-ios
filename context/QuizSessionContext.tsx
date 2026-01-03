@@ -30,6 +30,10 @@ const QuizSessionContext = createContext<QuizSessionContextValue | undefined>(
   undefined
 );
 
+/**
+ * Provides quiz session state (current question, results, history) and actions
+ * to fetch new tossups, judge answers, and manage errors.
+ */
 export function QuizSessionProvider({ children }: PropsWithChildren) {
   const abortRef = useRef<AbortController | null>(null);
   const prefetchAbortRef = useRef<AbortController | null>(null);
@@ -43,6 +47,9 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
 
   const clearError = useCallback(() => setError(undefined), []);
 
+  /**
+   * Build request filters from current user selections, omitting empty arrays.
+   */
   const buildFilters = useCallback(() => {
     return {
       difficulties: selectedDifficulties.length > 0 ? selectedDifficulties : undefined,
@@ -56,6 +63,9 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     nextQuestionsRef.current = nextQuestions;
   }, [nextQuestions]);
 
+  /**
+   * Preload additional tossups into a queue to keep gameplay responsive.
+   */
   const primeNextQuestion = useCallback(
     async (desiredLength = 2, existingLength?: number) => {
       prefetchAbortRef.current?.abort();
@@ -101,6 +111,9 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     void primeNextQuestion(2, 0);
   }, [selectedCategories, selectedDifficulties, primeNextQuestion]);
 
+  /**
+   * Pop the next queued tossup (or fetch one) and update current state.
+   */
   const loadNextQuestion = useCallback(async () => {
     abortRef.current?.abort();
     const abortController = new AbortController();
@@ -110,11 +123,14 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     setError(undefined);
     setLastResult(undefined);
 
-    if (nextQuestions.length > 0) {
-      setCurrentQuestion(nextQuestions[0]);
-      setNextQuestions((prev) => prev.slice(1));
+    const queuedQuestions = nextQuestionsRef.current;
+    if (queuedQuestions.length > 0) {
+      const [next, ...rest] = queuedQuestions;
+      nextQuestionsRef.current = rest;
+      setCurrentQuestion(next);
+      setNextQuestions(rest);
       setLoadingQuestion(false);
-      void primeNextQuestion(2, nextQuestions.length - 1);
+      void primeNextQuestion(2, rest.length);
       return;
     }
 
@@ -138,8 +154,11 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     } finally {
       setLoadingQuestion(false);
     }
-  }, [buildFilters, nextQuestions, primeNextQuestion]);
+  }, [buildFilters, primeNextQuestion]);
 
+  /**
+   * Judge a user's answer against the current tossup and append to history.
+   */
   const judgeAnswer = useCallback(
     (answer: string) => {
       if (!currentQuestion) {
@@ -149,10 +168,14 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
       const sanitizedAnswer = answer.trim();
       const answerline = currentQuestion.answerHtml || currentQuestion.answer;
 
-      const result = checkAnswer(
-        answerline,
-        sanitizedAnswer
-      ) as AnswerResult;
+      let result: AnswerResult;
+      try {
+        result = checkAnswer(answerline, sanitizedAnswer) as AnswerResult;
+      } catch (err) {
+        console.error('Failed to judge answer', err);
+        setError('Unable to check that answer. Please try again.');
+        return;
+      }
 
       setLastResult(result);
       setHistory((prev) => [
@@ -169,6 +192,9 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     [currentQuestion]
   );
 
+  /**
+   * Record a skipped question in history without triggering a judgment.
+   */
   const skipQuestion = useCallback(() => {
     if (!currentQuestion) {
       return;
@@ -212,6 +238,14 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     ]
   );
 
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      prefetchAbortRef.current?.abort();
+    },
+    []
+  );
+
   return (
     <QuizSessionContext.Provider value={value}>
       {children}
@@ -219,6 +253,9 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
   );
 }
 
+/**
+ * Read the quiz session context, throwing if used outside the provider.
+ */
 export function useQuizSessionContext() {
   const context = useContext(QuizSessionContext);
 

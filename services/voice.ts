@@ -3,9 +3,15 @@ import * as Speech from 'expo-speech';
 
 type VoiceEngine = 'expo' | 'puter-web';
 
+const EXPO_SPEECH_RATE = 0.92;
+const EXPO_SPEECH_PITCH = 1;
+
 let puterReady: Promise<void> | null = null;
 let activeHtmlAudio: HTMLAudioElement | null = null;
 
+/**
+ * Stop any in-flight speech playback for both Expo and web engines.
+ */
 export async function stopVoice(): Promise<void> {
   Speech.stop();
   if (Platform.OS === 'web' && activeHtmlAudio) {
@@ -19,6 +25,10 @@ export async function stopVoice(): Promise<void> {
   }
 }
 
+/**
+ * Speak the provided text using the best available engine for the platform.
+ * Returns the engine that was ultimately used.
+ */
 export async function speakWithBestVoice(
   text: string,
   voiceIdentifier?: string
@@ -33,14 +43,18 @@ export async function speakWithBestVoice(
   }
 
   Speech.speak(text, {
-    rate: 0.92,
-    pitch: 1,
+    rate: EXPO_SPEECH_RATE,
+    pitch: EXPO_SPEECH_PITCH,
     voice: voiceIdentifier,
     onError: (e) => console.error('Expo speech error', e),
   });
   return 'expo';
 }
 
+/**
+ * Return the engine that would be selected for the current platform without
+ * actually speaking.
+ */
 export function getVoiceEngineStatus(): VoiceEngine {
   return Platform.OS === 'web' ? 'puter-web' : 'expo';
 }
@@ -87,4 +101,3 @@ async function tryPuterTts(text: string, voiceIdentifier?: string): Promise<Voic
   }
   return null;
 }
-

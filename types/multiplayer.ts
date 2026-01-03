@@ -38,10 +38,12 @@ export type MultiplayerEvent =
   | { type: 'player:joined'; payload: MultiplayerPlayer }
   | { type: 'players:sync'; payload: { players: MultiplayerPlayer[] } }
   | { type: 'player:left'; payload: { playerId: string } }
+  | { type: 'session:pause'; payload: { reason?: string } }
   | { type: 'session:start'; payload: { settings: MultiplayerSettings; seed: string } }
   | { type: 'session:end'; payload: { reason?: string } }
   | { type: 'question:next'; payload: { requesterId: string } }
   | { type: 'question:new'; payload: { tossup: Tossup; seed: string } }
+  | { type: 'buzz:lock'; payload: { playerId: string } }
   | { type: 'buzz'; payload: MultiplayerBuzz }
   | { type: 'buzz:result'; payload: MultiplayerBuzz }
   | { type: 'question:end'; payload: { winnerId?: string } };

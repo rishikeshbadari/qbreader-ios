@@ -3,6 +3,21 @@ import type { Tossup } from '@/types/qb';
 
 const API_BASE = 'https://www.qbreader.org/api';
 const CATEGORY_SAMPLE_SIZE = 800;
+const DEFAULT_TOSSUP_COUNT = 1;
+const FALLBACK_CATEGORIES = [
+  'Literature',
+  'History',
+  'Science',
+  'Fine Arts',
+  'Religion',
+  'Mythology',
+  'Philosophy',
+  'Social Science',
+  'Current Events',
+  'Geography',
+  'Other Academic',
+  'Pop Culture',
+];
 
 const DIFFICULTY_GROUPS = [
   {
@@ -74,9 +89,12 @@ export type RandomTossupFilters = {
   categories?: string[];
 };
 
+/**
+ * Build the QBReader random tossup URL with optional filters applied.
+ */
 function buildRandomTossupUrl(filters?: RandomTossupFilters) {
   const url = new URL(`${API_BASE}/random-tossup`);
-  url.searchParams.set('number', '1');
+  url.searchParams.set('number', DEFAULT_TOSSUP_COUNT.toString());
 
   if (filters?.difficulties?.length) {
     url.searchParams.set('difficulties', filters.difficulties.join(','));
@@ -89,6 +107,10 @@ function buildRandomTossupUrl(filters?: RandomTossupFilters) {
   return url.toString();
 }
 
+/**
+ * Fetch a single random tossup from QBReader, normalizing the response into the
+ * app's Tossup shape.
+ */
 export async function fetchRandomTossup(
   signal?: AbortSignal,
   filters?: RandomTossupFilters
@@ -100,10 +122,7 @@ export async function fetchRandomTossup(
   }
 
   const payload = (await response.json()) as RandomTossupResponse | RawTossup[];
-  const tossups =
-    Array.isArray(payload) && !('tossups' in payload)
-      ? payload
-      : (payload as RandomTossupResponse).tossups ?? [];
+  const tossups = extractTossups(payload);
 
   if (!tossups.length) {
     throw new Error('QB Reader did not return a tossup. Please try again.');
@@ -112,6 +131,9 @@ export async function fetchRandomTossup(
   return normalizeTossup(tossups[0]);
 }
 
+/**
+ * Fetch available difficulty groupings from QBReader.
+ */
 export async function fetchAvailableDifficulties(): Promise<DifficultyOption[]> {
   const response = await fetch(`${API_BASE}/db-explorer/set-metadata?includeCounts=false`);
 
@@ -123,13 +145,7 @@ export async function fetchAvailableDifficulties(): Promise<DifficultyOption[]> 
     data: Array<{ difficulty?: number }>;
   };
 
-  const values = new Set<number>();
-  payload.data.forEach((item) => {
-    if (typeof item.difficulty === 'number') {
-      values.add(item.difficulty);
-    }
-  });
-
+  const values = collectDifficultyValues(payload.data);
   const grouped = DIFFICULTY_GROUPS.filter((group) =>
     group.values.some((value) => values.has(value))
   );
@@ -140,6 +156,9 @@ export async function fetchAvailableDifficulties(): Promise<DifficultyOption[]> 
   }));
 }
 
+/**
+ * Fetch available categories from QBReader, falling back to static defaults when none exist.
+ */
 export async function fetchAvailableCategories(): Promise<CategoryOption[]> {
   const url = new URL(`${API_BASE}/query`);
   url.searchParams.set('maxReturnLength', CATEGORY_SAMPLE_SIZE.toString());
@@ -152,6 +171,40 @@ export async function fetchAvailableCategories(): Promise<CategoryOption[]> {
   }
 
   const payload = (await response.json()) as QueryResponse;
+  const categories = collectCategories(payload);
+
+  return Array.from(categories)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => ({ name }));
+}
+
+/**
+ * Fetch both categories and difficulties in parallel.
+ */
+export async function fetchFilterOptions(): Promise<{
+  difficulties: DifficultyOption[];
+  categories: CategoryOption[];
+}> {
+  const [difficulties, categories] = await Promise.all([
+    fetchAvailableDifficulties(),
+    fetchAvailableCategories(),
+  ]);
+
+  return { difficulties, categories };
+}
+
+function collectDifficultyValues(data: Array<{ difficulty?: number }>): Set<number> {
+  const values = new Set<number>();
+  data.forEach((item) => {
+    if (typeof item.difficulty === 'number') {
+      values.add(item.difficulty);
+    }
+  });
+  return values;
+}
+
+function collectCategories(payload: QueryResponse): Set<string> {
   const categories = new Set<string>();
 
   const collectCategory = (value?: string | { name?: string }) => {
@@ -178,38 +231,16 @@ export async function fetchAvailableCategories(): Promise<CategoryOption[]> {
   });
 
   if (categories.size === 0) {
-    [
-      'Literature',
-      'History',
-      'Science',
-      'Fine Arts',
-      'Religion',
-      'Mythology',
-      'Philosophy',
-      'Social Science',
-      'Current Events',
-      'Geography',
-      'Other Academic',
-      'Pop Culture',
-    ].forEach((name) => categories.add(name));
+    FALLBACK_CATEGORIES.forEach((name) => categories.add(name));
   }
 
-  return Array.from(categories)
-    .filter(Boolean)
-    .sort((a, b) => a.localeCompare(b))
-    .map((name) => ({ name }));
+  return categories;
 }
 
-export async function fetchFilterOptions(): Promise<{
-  difficulties: DifficultyOption[];
-  categories: CategoryOption[];
-}> {
-  const [difficulties, categories] = await Promise.all([
-    fetchAvailableDifficulties(),
-    fetchAvailableCategories(),
-  ]);
-
-  return { difficulties, categories };
+function extractTossups(payload: RandomTossupResponse | RawTossup[]): RawTossup[] {
+  return Array.isArray(payload) && !('tossups' in payload)
+    ? payload
+    : (payload as RandomTossupResponse).tossups ?? [];
 }
 
 function cleanupPlainText(value: string): string {
@@ -221,15 +252,11 @@ function cleanupPlainText(value: string): string {
 }
 
 function normalizeTossup(raw: RawTossup): Tossup {
-  const id = String(raw.id ?? raw._id ?? `${Date.now()}`);
+  const id = resolveTossupId(raw);
   const questionHtml = raw.question ?? raw.question_sanitized ?? '';
   const answerHtml = raw.answer ?? raw.answer_sanitized ?? '';
-  const setName =
-    typeof raw.set === 'string' ? raw.set : raw.set?.name ?? undefined;
-  const packetNumber =
-    typeof raw.packet === 'string'
-      ? Number.parseInt(raw.packet, 10)
-      : raw.packet?.number;
+  const setName = normalizeSetName(raw.set);
+  const packetNumber = normalizePacketNumber(raw.packet);
 
   const questionPlainText = cleanupPlainText(
     raw.question_sanitized ?? stripHtmlTags(questionHtml)
@@ -244,15 +271,30 @@ function normalizeTossup(raw: RawTossup): Tossup {
     answerHtml,
     question: questionPlainText,
     answer: answerPlainText,
-    category:
-      typeof raw.category === 'string' ? raw.category : raw.category?.name,
-    subcategory:
-      typeof raw.subcategory === 'string'
-        ? raw.subcategory
-        : raw.subcategory?.name,
+    category: normalizeLabel(raw.category),
+    subcategory: normalizeLabel(raw.subcategory),
     difficulty: raw.difficulty,
     setName,
-    packetNumber: packetNumber && Number.isFinite(packetNumber) ? packetNumber : undefined,
+    packetNumber,
     questionNumber: raw.number,
   };
+}
+
+function resolveTossupId(raw: RawTossup): string {
+  return String(raw.id ?? raw._id ?? `${Date.now()}`);
+}
+
+function normalizeSetName(set?: RawSet | string): string | undefined {
+  return typeof set === 'string' ? set : set?.name ?? undefined;
+}
+
+function normalizePacketNumber(packet?: RawPacket | string): number | undefined {
+  const rawNumber =
+    typeof packet === 'string' ? Number.parseInt(packet, 10) : packet?.number;
+  return rawNumber && Number.isFinite(rawNumber) ? rawNumber : undefined;
+}
+
+function normalizeLabel(value?: string | { name?: string }): string | undefined {
+  if (!value) return undefined;
+  return typeof value === 'string' ? value : value.name ?? undefined;
 }

@@ -6,6 +6,7 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useThemeColor } from '@/hooks/useThemeColor';
+import { MIN_TOUCH_TARGET, scale, spacing, verticalScale } from '@/utils/responsive';
 
 export default function JoinGameScreen() {
   const { joinSession } = useMultiplayer();
@@ -85,29 +86,31 @@ export default function JoinGameScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    gap: 16,
+    padding: spacing.lg,
+    gap: spacing.md,
   },
   field: {
-    gap: 6,
+    gap: spacing.xs + scale(2),
   },
   label: {
     opacity: 0.9,
   },
   input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderWidth: scale(1),
+    borderRadius: scale(12),
+    paddingHorizontal: spacing.md,
+    paddingVertical: verticalScale(10),
     color: '#0f172a',
     backgroundColor: 'rgba(15, 23, 42, 0.02)',
+    minHeight: MIN_TOUCH_TARGET,
   },
   button: {
-    marginTop: 8,
-    borderRadius: 12,
-    paddingVertical: 14,
+    marginTop: spacing.sm,
+    borderRadius: scale(12),
+    paddingVertical: verticalScale(14),
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: MIN_TOUCH_TARGET,
   },
   buttonLabel: {
     color: '#fff',
@@ -115,6 +118,6 @@ const styles = StyleSheet.create({
   },
   error: {
     color: '#DC2626',
-    marginTop: 4,
+    marginTop: spacing.xs,
   },
 });

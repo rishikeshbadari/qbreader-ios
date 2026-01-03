@@ -3,6 +3,8 @@ import { StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/ThemedText';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import type { AnswerResult } from '@/types/qb';
+import { directiveLabel, normalizeDirective } from '@/utils/directives';
+import { responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 interface Props {
   result?: AnswerResult;
@@ -19,21 +21,18 @@ export function DirectivePill({ result }: Props) {
     return null;
   }
 
-  const directive = result.directive.toLowerCase();
+  const directive = normalizeDirective(result);
+  const label = directiveLabel(result);
 
   let backgroundColor = errorColor;
-  let label = 'Incorrect';
   let textColor = '#fff';
 
   if (directive === 'accept') {
     backgroundColor = successColor;
-    label = 'Correct';
   } else if (directive === 'prompt') {
     backgroundColor = warningColor;
-    label = 'Prompt';
   } else if (directive === 'skip') {
     backgroundColor = skipColor;
-    label = 'Skipped';
     textColor = brandColor;
   }
 
@@ -49,12 +48,13 @@ export function DirectivePill({ result }: Props) {
 const styles = StyleSheet.create({
   container: {
     borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 4,
+    paddingHorizontal: spacing.md + scale(2),
+    paddingVertical: verticalScale(4),
     alignSelf: 'flex-start',
+    minHeight: scale(24),
   },
   label: {
-    fontSize: 13,
+    fontSize: responsiveFont(13),
     letterSpacing: 0.2,
   },
 });

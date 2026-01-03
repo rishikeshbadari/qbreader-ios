@@ -6,8 +6,9 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
+import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
-const CONTENT_PADDING = 20;
+const CONTENT_PADDING = spacing.lg;
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -198,12 +199,12 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: CONTENT_PADDING,
-    gap: 20,
+    gap: spacing.lg,
   },
   section: {
-    borderRadius: 20,
-    padding: 20,
-    gap: 12,
+    borderRadius: scale(20),
+    padding: spacing.lg,
+    gap: spacing.md,
   },
   subtitle: {
     opacity: 0.8,
@@ -212,7 +213,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
   },
   speedLabel: {
     opacity: 0.8,
@@ -222,19 +223,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   speedLegend: {
-    fontSize: 12,
+    fontSize: responsiveFont(12),
     opacity: 0.8,
   },
   chipGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.sm,
   },
   chip: {
-    borderWidth: 1,
+    borderWidth: scale(1),
     borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: spacing.md + scale(2),
+    paddingVertical: verticalScale(10),
+    minHeight: MIN_TOUCH_TARGET,
   },
   chipLabel: {
     letterSpacing: 0.3,
@@ -243,34 +245,35 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   loadingIndicator: {
-    marginTop: 20,
+    marginTop: spacing.lg,
   },
   loadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: spacing.sm,
   },
   loadingLabel: {
     opacity: 0.8,
   },
   errorCard: {
-    borderWidth: 1,
+    borderWidth: scale(1),
   },
   errorText: {
     color: '#DC2626',
   },
   errorMessage: {
-    marginTop: 8,
+    marginTop: spacing.sm,
     color: '#DC2626',
     fontWeight: '600',
   },
   refreshButton: {
     alignSelf: 'flex-start',
-    borderWidth: 1,
+    borderWidth: scale(1),
     borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginTop: 4,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+    marginTop: spacing.xs,
+    minHeight: MIN_TOUCH_TARGET,
   },
 });

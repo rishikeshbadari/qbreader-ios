@@ -8,6 +8,8 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useQuizSession } from '@/hooks/useQuizSession';
 import { useSessionStats } from '@/hooks/useSessionStats';
+import { normalizeDirective } from '@/utils/directives';
+import { responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 type HistoryFilter = 'answered' | 'correct' | 'incorrect' | 'skipped';
 
@@ -48,7 +50,7 @@ export default function HistoryScreen() {
     }
 
     return history.filter((entry) => {
-      const directive = entry.result.directive.toLowerCase();
+      const directive = normalizeDirective(entry.result);
       if (activeFilter === 'correct') {
         return directive === 'accept';
       }
@@ -130,33 +132,33 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statsContent: {
-    padding: 20,
-    gap: 18,
+    padding: spacing.lg,
+    gap: spacing.md + scale(2),
   },
   listContent: {
-    padding: 20,
-    gap: 16,
+    padding: spacing.lg,
+    gap: spacing.md,
   },
   header: {
-    gap: 16,
+    gap: spacing.md,
   },
   subtitle: {
-    marginTop: 6,
+    marginTop: spacing.sm - scale(2),
     opacity: 0.8,
   },
   helperText: {
     opacity: 0.8,
   },
   detailHeader: {
-    gap: 8,
-    marginBottom: 12,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
   backButton: {
     alignSelf: 'flex-start',
-    paddingVertical: 6,
-    paddingHorizontal: 4,
+    paddingVertical: verticalScale(6),
+    paddingHorizontal: scale(4),
   },
   backLabel: {
-    fontSize: 16,
+    fontSize: responsiveFont(16),
   },
 });

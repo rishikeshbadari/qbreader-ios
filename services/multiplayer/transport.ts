@@ -2,6 +2,12 @@ import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 
 import type { MultiplayerEvent } from '@/types/multiplayer';
 
+/**
+ * Lightweight transport layer abstractions for multiplayer sync. Provides a
+ * loopback implementation for development and an iOS MultipeerConnectivity
+ * transport when the native module is available.
+ */
+
 type TransportRole = 'host' | 'client' | null;
 
 export type TransportCallbacks = {
@@ -143,6 +149,11 @@ export class LoopbackTransport implements MultiplayerTransport {
   }
 }
 
+/**
+ * Create the appropriate transport for the current platform.
+ * - iOS uses MultipeerConnectivity when available
+ * - all other platforms fall back to in-memory loopback
+ */
 export function createTransport(): MultiplayerTransport {
   if (Platform.OS === 'ios' && nativeMultipeer) {
     try {

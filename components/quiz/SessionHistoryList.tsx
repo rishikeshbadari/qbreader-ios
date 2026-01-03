@@ -7,7 +7,9 @@ import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import type { SessionHistoryEntry } from '@/types/qb';
+import { normalizeDirective } from '@/utils/directives';
 import { stripHtmlTags, truncateText } from '@/utils/text';
+import { responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 interface Props {
   history: SessionHistoryEntry[];
@@ -53,9 +55,7 @@ export function SessionHistoryList({
   const sections: Section[] = groupByDirective
     ? SECTION_CONFIG.map((config) => ({
         title: config.title,
-        data: history.filter((entry) =>
-          config.match(entry.result.directive.toLowerCase())
-        ),
+        data: history.filter((entry) => config.match(normalizeDirective(entry.result))),
       })).filter((section) => section.data.length > 0)
     : history.length > 0
       ? [
@@ -143,45 +143,45 @@ export function SessionHistoryList({
 
 const styles = StyleSheet.create({
   listContent: {
-    paddingBottom: 40,
+    paddingBottom: verticalScale(40),
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   sectionCount: {
     opacity: 0.7,
   },
   sectionSeparator: {
-    height: 24,
+    height: verticalScale(24),
   },
   emptyState: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 24,
-    gap: 8,
+    borderRadius: scale(20),
+    borderWidth: scale(1),
+    padding: spacing.xl,
+    gap: spacing.sm,
   },
   historyRow: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 16,
-    gap: 10,
+    borderRadius: scale(20),
+    borderWidth: scale(1),
+    padding: spacing.lg,
+    gap: spacing.sm,
   },
   historyHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    gap: 12,
+    gap: spacing.md,
   },
   questionPreview: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: responsiveFont(15),
+    lineHeight: verticalScale(22),
   },
   answerPreview: {
     flexDirection: 'row',
-    gap: 6,
+    gap: spacing.xs,
     alignItems: 'flex-start',
   },
   answerLabel: {
@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   timestamp: {
-    fontSize: 13,
+    fontSize: responsiveFont(13),
     opacity: 0.7,
   },
 });

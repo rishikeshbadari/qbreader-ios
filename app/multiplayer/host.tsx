@@ -7,7 +7,8 @@ import { ThemedView } from '@/components/ThemedView';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
-import type { CategoryOption, DifficultyOption } from '@/services/qbreader';
+import type { DifficultyOption } from '@/services/qbreader';
+import { MIN_TOUCH_TARGET, scale, spacing, verticalScale } from '@/utils/responsive';
 
 export default function HostGameScreen() {
   const { hostSession } = useMultiplayer();
@@ -221,30 +222,32 @@ export default function HostGameScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    gap: 16,
+    padding: spacing.lg,
+    gap: spacing.md,
   },
   subtitle: {
     opacity: 0.8,
   },
   field: {
-    gap: 6,
+    gap: spacing.xs + scale(2),
   },
   label: {
     opacity: 0.9,
   },
   input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderWidth: scale(1),
+    borderRadius: scale(12),
+    paddingHorizontal: spacing.md,
+    paddingVertical: verticalScale(10),
+    minHeight: MIN_TOUCH_TARGET,
   },
   button: {
-    marginTop: 8,
-    borderRadius: 12,
-    paddingVertical: 14,
+    marginTop: spacing.sm,
+    borderRadius: scale(12),
+    paddingVertical: verticalScale(14),
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: MIN_TOUCH_TARGET,
   },
   buttonLabel: {
     color: '#fff',
@@ -252,10 +255,10 @@ const styles = StyleSheet.create({
   },
   error: {
     color: '#DC2626',
-    marginTop: 4,
+    marginTop: spacing.xs,
   },
   section: {
-    gap: 8,
+    gap: spacing.sm,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -269,25 +272,26 @@ const styles = StyleSheet.create({
   chipGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.sm,
   },
   chip: {
-    borderWidth: 1,
+    borderWidth: scale(1),
     borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    minHeight: MIN_TOUCH_TARGET,
   },
   chipLabel: {
     letterSpacing: 0.3,
   },
   errorCard: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
+    borderWidth: scale(1),
+    borderRadius: scale(10),
+    padding: spacing.sm,
     borderColor: '#DC2626',
-    gap: 6,
+    gap: spacing.xs + scale(2),
   },
   loading: {
-    marginVertical: 8,
+    marginVertical: spacing.sm,
   },
 });

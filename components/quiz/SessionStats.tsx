@@ -5,6 +5,7 @@ import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import type { SessionStats as SessionStatsType } from '@/types/qb';
+import { responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 export type SessionStatsCardKey = 'answered' | 'correct' | 'skipped' | 'incorrect' | 'streak';
 
@@ -93,10 +94,10 @@ export function SessionStats({ stats, compact = false, onSelectCard }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 16,
-    gap: 12,
+    borderWidth: scale(1),
+    borderRadius: scale(20),
+    padding: spacing.lg,
+    gap: spacing.md,
   },
   header: {
     flexDirection: 'row',
@@ -104,7 +105,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   progressTrack: {
-    height: 6,
+    height: verticalScale(6),
     borderRadius: 999,
     backgroundColor: 'rgba(148, 163, 184, 0.25)',
     overflow: 'hidden',
@@ -116,20 +117,20 @@ const styles = StyleSheet.create({
   cardGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.sm,
   },
   card: {
-    borderWidth: 1,
+    borderWidth: scale(1),
     borderRadius: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: spacing.md,
     minWidth: '30%',
   },
   cardLabel: {
-    fontSize: 12,
+    fontSize: responsiveFont(12),
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
   cardValue: {
-    fontSize: 20,
+    fontSize: responsiveFont(20),
   },
 });

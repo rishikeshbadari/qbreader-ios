@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { spacing } from '@/utils/responsive';
 
 export default function MultiplayerHome() {
   return (
@@ -26,18 +27,19 @@ export default function MultiplayerHome() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    gap: 16,
+    padding: spacing.lg,
+    gap: spacing.md,
     justifyContent: 'center',
   },
   subtitle: {
     opacity: 0.8,
   },
   actions: {
-    gap: 12,
-    marginTop: 8,
+    gap: spacing.md - spacing.xs,
+    marginTop: spacing.sm,
   },
   actionLink: {
-    paddingVertical: 14,
+    paddingVertical: spacing.md + spacing.xs,
+    minHeight: spacing.lg,
   },
 });

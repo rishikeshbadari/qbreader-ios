@@ -4,6 +4,7 @@ import { Keyboard, StyleSheet, TextInput } from 'react-native';
 import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
 import { useThemeColor } from '@/hooks/useThemeColor';
+import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 interface Props {
   value: string;
@@ -55,17 +56,18 @@ export function AnswerInput({
 
 const styles = StyleSheet.create({
   container: {
-    borderWidth: 1,
+    borderWidth: scale(1),
     borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
+    minHeight: MIN_TOUCH_TARGET,
   },
   input: {
     flex: 1,
-    fontSize: 16,
-    paddingVertical: 10,
+    fontSize: responsiveFont(16),
+    paddingVertical: verticalScale(10),
   },
 });

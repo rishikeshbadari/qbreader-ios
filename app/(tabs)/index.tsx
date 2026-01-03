@@ -1,14 +1,15 @@
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Pressable,
   StyleSheet,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AnswerInput } from '@/components/quiz/AnswerInput';
 import { QuestionCard } from '@/components/quiz/QuestionCard';
@@ -17,6 +18,7 @@ import { ThemedView } from '@/components/ThemedView';
 import { useQuizSession } from '@/hooks/useQuizSession';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 export default function PlayScreen() {
   const {
@@ -40,9 +42,14 @@ export default function PlayScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const extraFooterPadding = Platform.OS === 'ios' ? tabBarHeight : 0;
   const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
   const playStateRef = useRef(playState);
   const currentQuestionRef = useRef(currentQuestion);
   const lastResultRef = useRef(lastResult);
+  const hasBuzzedRef = useRef(hasBuzzed);
+  const answerRef = useRef(answer);
+  const submittedRef = useRef(false);
+  const [keyboardToggle, setKeyboardToggle] = useState(0);
 
   useEffect(() => {
     setAnswer('');
@@ -62,6 +69,49 @@ export default function PlayScreen() {
     lastResultRef.current = lastResult;
   }, [lastResult]);
 
+  useEffect(() => {
+    hasBuzzedRef.current = hasBuzzed;
+    if (!hasBuzzed) {
+      submittedRef.current = false;
+    }
+  }, [hasBuzzed]);
+
+  useEffect(() => {
+    answerRef.current = answer;
+  }, [answer]);
+
+  useEffect(() => {
+    submittedRef.current = false;
+  }, [currentQuestion?.id]);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardToggle((prev) => prev + 1);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardToggle((prev) => prev + 1);
+      if (
+        playStateRef.current !== 'active' ||
+        !hasBuzzedRef.current ||
+        lastResultRef.current ||
+        submittedRef.current
+      ) {
+        return;
+      }
+
+      if (answerRef.current.trim().length > 0) {
+        return;
+      }
+
+      submittedRef.current = true;
+      judgeAnswer('');
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [judgeAnswer]);
   useFocusEffect(
     useCallback(() => {
       return () => {
@@ -76,27 +126,19 @@ export default function PlayScreen() {
     }, [])
   );
 
-  const canCheck = useMemo(
-    () =>
-      Boolean(currentQuestion) && !loadingQuestion && hasBuzzed && !lastResult,
-    [currentQuestion, hasBuzzed, lastResult, loadingQuestion]
-  );
-
-  type ButtonMode = 'skip' | 'show-answer' | 'check' | 'next';
-  const buttonMode: ButtonMode = hasBuzzed
-    ? lastResult
-      ? 'next'
-      : 'check'
+  type ButtonMode = 'skip' | 'show-answer' | 'next';
+  const buttonMode: ButtonMode = lastResult
+    ? 'next'
     : hasFullyRevealedQuestion
       ? 'show-answer'
       : 'skip';
 
   const handleSubmit = () => {
-    if (!canCheck || playState !== 'active') {
+    if (playState !== 'active' || !hasBuzzed || lastResult) {
       return;
     }
-
-    judgeAnswer(answer);
+    submittedRef.current = true;
+    judgeAnswer(answer.trim());
   };
 
   const handleBuzz = () => {
@@ -148,14 +190,12 @@ export default function PlayScreen() {
   }, []);
 
   const handlePrimaryAction = () => {
-    if (buttonMode === 'check') {
-      handleSubmit();
-      return;
-    }
     if (buttonMode === 'show-answer') {
+      Keyboard.dismiss();
       handleShowAnswer();
       return;
     }
+    Keyboard.dismiss();
     handleSkip();
   };
 
@@ -182,15 +222,21 @@ export default function PlayScreen() {
     colorScheme === 'dark' ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.95)';
   const overlayTextColor = colorScheme === 'dark' ? '#fff' : '#0f172a';
   const controlsDisabled = playState !== 'active';
+  const isAnswering = hasBuzzed && playState === 'active' && !lastResult;
+  const answerSectionHeight = MIN_TOUCH_TARGET;
+  const contentPaddingBottom = isAnswering
+    ? spacing.sm
+    : spacing.lg + extraFooterPadding + insets.bottom;
+  const showActions = !isAnswering;
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+        keyboardVerticalOffset={0}
         style={styles.flex}>
         <ThemedView style={styles.container}>
-          <View style={[styles.content, { paddingBottom: 20 + extraFooterPadding }]}>
+          <View style={[styles.content, { paddingBottom: contentPaddingBottom }]}>
             <View style={styles.mainSection}>
               <View style={styles.header}>
                 <View style={{ flex: 1 }}>
@@ -210,6 +256,8 @@ export default function PlayScreen() {
                   result={lastResult}
                   revealActive={playState === 'active'}
                   onFullQuestionRevealChange={handleFullQuestionRevealChange}
+                  anchorToBottomOnBuzz
+                  scrollAnchorKey={keyboardToggle}
                 />
                 {showOverlay ? (
                   <Pressable
@@ -229,83 +277,73 @@ export default function PlayScreen() {
                 ) : null}
               </View>
             </View>
-            <View style={styles.footerSection}>
-              <View style={styles.actions}>
-                <Pressable
-                  onPress={handleBuzz}
-                  disabled={
-                    !currentQuestion ||
-                    loadingQuestion ||
-                    hasBuzzed ||
-                    Boolean(lastResult) ||
-                    controlsDisabled
-                  }
-                  accessibilityRole="button"
-                  style={({ pressed }) => [
-                    styles.buzzButton,
-                    {
-                      backgroundColor: dangerColor,
-                      opacity:
-                        !currentQuestion || loadingQuestion
-                          ? 0.25
-                          : hasBuzzed || lastResult
-                            ? 0.6
-                            : pressed
-                              ? 0.9
-                              : 1,
-                    },
-                  ]}>
-                  <ThemedText type="defaultSemiBold" style={styles.actionLabel}>
-                    Buzz
-                  </ThemedText>
-                </Pressable>
-                <Pressable
-                  onPress={handlePrimaryAction}
-                  disabled={
-                    buttonMode === 'check'
-                      ? !canCheck || controlsDisabled
-                      : !currentQuestion || loadingQuestion || controlsDisabled
-                  }
-                  accessibilityRole="button"
-                  style={({ pressed }) => [
-                    styles.skipButton,
-                    {
-                      borderColor,
-                      borderWidth: buttonMode === 'check' ? 0 : 1,
-                      backgroundColor:
-                        buttonMode === 'check' ? brandColor : 'transparent',
-                      opacity:
-                        buttonMode === 'check'
-                          ? !canCheck
-                            ? 0.4
-                            : pressed
-                              ? 0.8
-                              : 1
-                          : !currentQuestion || loadingQuestion
+              <View style={styles.footerSection}>
+              {showActions ? (
+                <View style={styles.actions}>
+                  <Pressable
+                    onPress={handleBuzz}
+                    disabled={
+                      !currentQuestion ||
+                      loadingQuestion ||
+                      hasBuzzed ||
+                      Boolean(lastResult) ||
+                      controlsDisabled
+                    }
+                    accessibilityRole="button"
+                    style={({ pressed }) => [
+                      styles.buzzButton,
+                      {
+                        backgroundColor: dangerColor,
+                        opacity:
+                          !currentQuestion || loadingQuestion
+                            ? 0.25
+                            : hasBuzzed || lastResult
+                              ? 0.6
+                              : pressed
+                                ? 0.9
+                                : 1,
+                      },
+                    ]}>
+                    <ThemedText type="defaultSemiBold" style={styles.actionLabel}>
+                      Buzz
+                    </ThemedText>
+                  </Pressable>
+                  <Pressable
+                    onPress={handlePrimaryAction}
+                    disabled={!currentQuestion || loadingQuestion || controlsDisabled}
+                    accessibilityRole="button"
+                    style={({ pressed }) => [
+                      styles.skipButton,
+                      {
+                        borderColor,
+                        borderWidth: buttonMode === 'next' ? 0 : 1,
+                        backgroundColor:
+                          buttonMode === 'next' ? brandColor : 'transparent',
+                        opacity:
+                          !currentQuestion || loadingQuestion
                             ? 0.4
                             : pressed
                               ? 0.7
                               : 1,
-                    },
-                  ]}>
-                  <ThemedText
-                    type="defaultSemiBold"
-                    style={[
-                      styles.skipLabel,
-                      { color: buttonMode === 'check' ? '#fff' : skipTextColor },
+                      },
                     ]}>
-                    {buttonMode === 'check'
-                      ? 'Check'
-                      : buttonMode === 'next'
+                    <ThemedText
+                      type="defaultSemiBold"
+                      style={[
+                        styles.skipLabel,
+                        { color: buttonMode === 'next' ? '#fff' : skipTextColor },
+                      ]}>
+                      {buttonMode === 'next'
                         ? 'Next'
                         : buttonMode === 'show-answer'
                           ? 'Show Answer'
                           : 'Skip'}
-                  </ThemedText>
-                </Pressable>
-              </View>
-              {hasBuzzed && playState === 'active' && !lastResult ? (
-                <View style={styles.answerSection}>
+                    </ThemedText>
+                  </Pressable>
+                </View>
+              ) : null}
+              <View style={[styles.answerSection, { minHeight: answerSectionHeight }]}>
+                {isAnswering ? (
                   <AnswerInput
                     value={answer}
                     onChangeText={setAnswer}
@@ -317,8 +355,10 @@ export default function PlayScreen() {
                     }
                     autoFocus={hasBuzzed && !lastResult}
                   />
-                </View>
-              ) : null}
+                ) : (
+                  <View style={styles.answerPlaceholder} pointerEvents="none" />
+                )}
+              </View>
               {lastResult?.directedPrompt ? (
                 <ThemedText style={styles.prompt}>
                   Directed prompt: {lastResult.directedPrompt}
@@ -351,11 +391,11 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 20,
-    gap: 20,
+    padding: spacing.lg,
+    gap: spacing.lg,
   },
   mainSection: {
-    gap: 20,
+    gap: spacing.lg,
     flex: 1,
   },
   header: {
@@ -364,13 +404,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   subtitle: {
-    marginTop: 4,
+    marginTop: spacing.xs,
     opacity: 0.8,
   },
   questionWrapper: {
     flex: 1,
     position: 'relative',
-    borderRadius: 24,
+    borderRadius: scale(24),
     overflow: 'hidden',
   },
   questionOverlay: {
@@ -379,38 +419,39 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    borderRadius: 24,
+    borderRadius: scale(24),
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
+    padding: spacing.lg,
   },
   overlayLabel: {
-    fontSize: 18,
+    fontSize: responsiveFont(18),
     letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
   actions: {
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.md,
   },
   footerSection: {
-    marginTop: 'auto',
-    gap: 16,
+    gap: spacing.md,
   },
   buzzButton: {
     flex: 1,
-    borderRadius: 14,
-    paddingVertical: 16,
+    borderRadius: scale(14),
+    paddingVertical: verticalScale(16),
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: MIN_TOUCH_TARGET,
   },
   skipButton: {
     flex: 1,
-    borderRadius: 14,
-    paddingVertical: 16,
+    borderRadius: scale(14),
+    paddingVertical: verticalScale(16),
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    borderWidth: scale(1),
+    minHeight: MIN_TOUCH_TARGET,
   },
   actionLabel: {
     color: '#fff',
@@ -420,7 +461,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   answerSection: {
-    marginTop: -4,
+    marginTop: -spacing.xs,
+  },
+  answerPlaceholder: {
+    flex: 1,
   },
   prompt: {
     fontStyle: 'italic',
