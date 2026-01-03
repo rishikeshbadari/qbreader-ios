@@ -1,92 +1,75 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
-import type { DifficultyOption } from '@/services/qbreader';
-import { MIN_TOUCH_TARGET, scale, spacing, verticalScale } from '@/utils/responsive';
+import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 export default function HostGameScreen() {
-  const { hostSession } = useMultiplayer();
-  const {
-    availableCategories,
-    availableDifficulties,
-    revealSpeed,
-    loadingOptions,
-    loadError,
-    refreshOptions,
-  } = useSettings();
+  const { hostGame } = useMultiplayer();
+  const { availableCategories, availableDifficulties, revealSpeed, loadingOptions } = useSettings();
   const router = useRouter();
+
   const [name, setName] = useState('');
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string>();
-  const [categorySelection, setCategorySelection] = useState<string[]>([]);
-  const [difficultySelection, setDifficultySelection] = useState<number[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedDifficulties, setSelectedDifficulties] = useState<number[]>([]);
+
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
-  const textOnBrand = '#fff';
+  const textColor = useThemeColor({}, 'text');
+  const mutedColor = useThemeColor({}, 'muted');
 
-  const allDifficulties = useMemo(
-    () => availableDifficulties.flatMap((d) => d.values),
-    [availableDifficulties]
-  );
-
-  const allCategories = useMemo(
-    () => availableCategories.map((c) => c.name),
-    [availableCategories]
-  );
+  // Initialize selections when options load
+  const allDifficulties = useMemo(() => availableDifficulties.flatMap(d => d.values), [availableDifficulties]);
+  const allCategories = useMemo(() => availableCategories.map(c => c.name), [availableCategories]);
 
   useEffect(() => {
-    if (availableDifficulties.length > 0 && difficultySelection.length === 0) {
-      setDifficultySelection(allDifficulties);
+    if (availableDifficulties.length > 0 && selectedDifficulties.length === 0) {
+      setSelectedDifficulties(allDifficulties);
     }
-    if (availableCategories.length > 0 && categorySelection.length === 0) {
-      setCategorySelection(allCategories);
+    if (availableCategories.length > 0 && selectedCategories.length === 0) {
+      setSelectedCategories(allCategories);
     }
-  }, [allCategories, allDifficulties, availableCategories.length, availableDifficulties.length, categorySelection.length, difficultySelection.length]);
+  }, [allCategories, allDifficulties, availableCategories.length, availableDifficulties.length]);
 
-  const toggleDifficulty = (option: DifficultyOption) => {
-    const values = option.values;
-    const isSelected = values.every((v) => difficultySelection.includes(v));
+  const toggleDifficulty = (values: number[]) => {
+    const isSelected = values.every(v => selectedDifficulties.includes(v));
     if (isSelected) {
-      const next = difficultySelection.filter((v) => !values.includes(v));
-      setDifficultySelection(next.length > 0 ? next : values); // keep at least one group
+      const next = selectedDifficulties.filter(v => !values.includes(v));
+      setSelectedDifficulties(next.length > 0 ? next : values);
     } else {
-      setDifficultySelection(Array.from(new Set([...difficultySelection, ...values])));
+      setSelectedDifficulties([...new Set([...selectedDifficulties, ...values])]);
     }
   };
 
-  const toggleCategory = (name: string) => {
-    const isSelected = categorySelection.includes(name);
+  const toggleCategory = (categoryName: string) => {
+    const isSelected = selectedCategories.includes(categoryName);
     if (isSelected) {
-      const next = categorySelection.filter((c) => c !== name);
-      setCategorySelection(next.length > 0 ? next : [name]); // keep at least one
+      const next = selectedCategories.filter(c => c !== categoryName);
+      setSelectedCategories(next.length > 0 ? next : [categoryName]);
     } else {
-      setCategorySelection([...categorySelection, name].sort((a, b) => a.localeCompare(b)));
+      setSelectedCategories([...selectedCategories, categoryName].sort());
     }
   };
 
   const handleStart = async () => {
-    if (isStarting) {
+    if (isStarting || selectedCategories.length === 0 || selectedDifficulties.length === 0) {
+      setError('Select at least one category and difficulty.');
       return;
     }
-    if (categorySelection.length === 0 || difficultySelection.length === 0) {
-      setError('Choose at least one category and difficulty.');
-      return;
-    }
+
     setIsStarting(true);
     setError(undefined);
+
     try {
-      const sessionId = await hostSession(
-        {
-          difficulties: difficultySelection,
-          categories: categorySelection,
-          revealSpeed,
-        },
+      const sessionId = await hostGame(
+        { difficulties: selectedDifficulties, categories: selectedCategories, revealSpeed },
         name.trim() || 'Player'
       );
       router.replace({ pathname: '/multiplayer/game', params: { sessionId } });
@@ -99,111 +82,88 @@ export default function HostGameScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">Start a game</ThemedText>
-      <ThemedText style={styles.subtitle}>
-        Pick categories and difficulties for this game. Everyone will play with these settings.
-      </ThemedText>
-      <View style={styles.field}>
-        <ThemedText style={styles.label}>Your name</ThemedText>
-        <TextInput
-          placeholder="Player"
-          selectionColor={textOnBrand}
-          placeholderTextColor={textOnBrand}
-          style={[
-            styles.input,
-            {
-              borderColor,
-              backgroundColor: brandColor,
-              color: textOnBrand,
-            },
-          ]}
-          value={name}
-          onChangeText={setName}
-        />
-      </View>
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <ThemedText type="defaultSemiBold">Difficulty</ThemedText>
-          <Pressable onPress={() => setDifficultySelection(allDifficulties)}>
-            <ThemedText style={styles.link}>Select all</ThemedText>
-          </Pressable>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.header}>
+          <ThemedText type="title">Start a Game</ThemedText>
+          <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
+            Choose settings for this game session.
+          </ThemedText>
         </View>
-        {loadingOptions ? (
-          <ActivityIndicator style={styles.loading} />
-        ) : (
-          <View style={styles.chipGrid}>
-            {availableDifficulties.map((option) => {
-              const isSelected = option.values.every((v) => difficultySelection.includes(v));
-              return (
-                <Pressable
-                  key={option.label}
-                  onPress={() => toggleDifficulty(option)}
-                  style={[
-                    styles.chip,
-                    {
-                      borderColor,
-                      backgroundColor: isSelected ? brandColor : 'transparent',
-                    },
-                  ]}>
-                  <ThemedText
-                    type="defaultSemiBold"
-                    style={[styles.chipLabel, { color: isSelected ? '#fff' : '#0f172a' }]}>
-                    {option.label}
-                  </ThemedText>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
-      </View>
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <ThemedText type="defaultSemiBold">Categories</ThemedText>
-          <Pressable onPress={() => setCategorySelection(allCategories)}>
-            <ThemedText style={styles.link}>Select all</ThemedText>
-          </Pressable>
+        {/* Name input */}
+        <View style={styles.section}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>Your Name</ThemedText>
+          <TextInput
+            placeholder="Player"
+            placeholderTextColor={mutedColor}
+            style={[styles.input, { borderColor, color: textColor }]}
+            value={name}
+            onChangeText={setName}
+          />
         </View>
-        {loadingOptions ? (
-          <ActivityIndicator style={styles.loading} />
-        ) : (
-          <View style={styles.chipGrid}>
-            {availableCategories.map((category) => {
-              const isSelected = categorySelection.includes(category.name);
-              return (
-                <Pressable
-                  key={category.name}
-                  onPress={() => toggleCategory(category.name)}
-                  style={[
-                    styles.chip,
-                    {
-                      borderColor,
-                      backgroundColor: isSelected ? brandColor : 'transparent',
-                    },
-                  ]}>
-                  <ThemedText
-                    type="defaultSemiBold"
-                    style={[styles.chipLabel, { color: isSelected ? '#fff' : '#0f172a' }]}>
-                    {category.name}
-                  </ThemedText>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
-      </View>
 
-      {loadError ? (
-        <View style={styles.errorCard}>
-          <ThemedText style={styles.error}>{loadError}</ThemedText>
-          <Pressable onPress={refreshOptions}>
-            <ThemedText type="defaultSemiBold" style={styles.link}>
-              Try again
-            </ThemedText>
-          </Pressable>
+        {/* Difficulty */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <ThemedText type="subtitle" style={styles.sectionTitle}>Difficulty</ThemedText>
+            <Pressable onPress={() => setSelectedDifficulties(allDifficulties)} hitSlop={8}>
+              <ThemedText style={[styles.link, { color: brandColor }]}>Select all</ThemedText>
+            </Pressable>
+          </View>
+          {loadingOptions ? (
+            <ActivityIndicator />
+          ) : (
+            <View style={styles.chipGrid}>
+              {availableDifficulties.map(option => {
+                const isSelected = option.values.every(v => selectedDifficulties.includes(v));
+                return (
+                  <Pressable
+                    key={option.label}
+                    onPress={() => toggleDifficulty(option.values)}
+                    style={[styles.chip, { borderColor, backgroundColor: isSelected ? brandColor : 'transparent' }]}>
+                    <ThemedText style={[styles.chipLabel, { color: isSelected ? '#fff' : textColor }]}>
+                      {option.label}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
         </View>
-      ) : null}
-      {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
+
+        {/* Categories */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <ThemedText type="subtitle" style={styles.sectionTitle}>Categories</ThemedText>
+            <Pressable onPress={() => setSelectedCategories(allCategories)} hitSlop={8}>
+              <ThemedText style={[styles.link, { color: brandColor }]}>Select all</ThemedText>
+            </Pressable>
+          </View>
+          {loadingOptions ? (
+            <ActivityIndicator />
+          ) : (
+            <View style={styles.chipGrid}>
+              {availableCategories.map(category => {
+                const isSelected = selectedCategories.includes(category.name);
+                return (
+                  <Pressable
+                    key={category.name}
+                    onPress={() => toggleCategory(category.name)}
+                    style={[styles.chip, { borderColor, backgroundColor: isSelected ? brandColor : 'transparent' }]}>
+                    <ThemedText style={[styles.chipLabel, { color: isSelected ? '#fff' : textColor }]}>
+                      {category.name}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
+        {error && <ThemedText style={styles.error}>{error}</ThemedText>}
+      </ScrollView>
+
+      {/* Start button */}
       <Pressable
         onPress={handleStart}
         disabled={isStarting || loadingOptions}
@@ -212,7 +172,7 @@ export default function HostGameScreen() {
           { backgroundColor: brandColor, opacity: isStarting || loadingOptions ? 0.5 : pressed ? 0.8 : 1 },
         ]}>
         <ThemedText type="defaultSemiBold" style={styles.buttonLabel}>
-          {isStarting ? 'Starting…' : 'Start game'}
+          {isStarting ? 'Starting…' : 'Start Game'}
         </ThemedText>
       </Pressable>
     </ThemedView>
@@ -222,40 +182,17 @@ export default function HostGameScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  content: {
     padding: spacing.lg,
-    gap: spacing.md,
+    gap: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  header: {
+    gap: spacing.xs,
   },
   subtitle: {
-    opacity: 0.8,
-  },
-  field: {
-    gap: spacing.xs + scale(2),
-  },
-  label: {
-    opacity: 0.9,
-  },
-  input: {
-    borderWidth: scale(1),
-    borderRadius: scale(12),
-    paddingHorizontal: spacing.md,
-    paddingVertical: verticalScale(10),
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  button: {
-    marginTop: spacing.sm,
-    borderRadius: scale(12),
-    paddingVertical: verticalScale(14),
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  buttonLabel: {
-    color: '#fff',
-    letterSpacing: 0.4,
-  },
-  error: {
-    color: '#DC2626',
-    marginTop: spacing.xs,
+    fontSize: responsiveFont(14),
   },
   section: {
     gap: spacing.sm,
@@ -265,33 +202,48 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  sectionTitle: {
+    fontSize: responsiveFont(16),
+  },
   link: {
-    color: '#0f172a',
-    opacity: 0.8,
+    fontSize: responsiveFont(14),
+    fontWeight: '600',
+  },
+  input: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(10),
+    paddingHorizontal: spacing.md,
+    paddingVertical: verticalScale(12),
+    fontSize: responsiveFont(16),
+    minHeight: MIN_TOUCH_TARGET,
   },
   chipGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   chip: {
-    borderWidth: scale(1),
-    borderRadius: 999,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    minHeight: MIN_TOUCH_TARGET,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(8),
+    paddingHorizontal: spacing.sm,
+    paddingVertical: verticalScale(6),
   },
   chipLabel: {
-    letterSpacing: 0.3,
+    fontSize: responsiveFont(13),
   },
-  errorCard: {
-    borderWidth: scale(1),
-    borderRadius: scale(10),
-    padding: spacing.sm,
-    borderColor: '#DC2626',
-    gap: spacing.xs + scale(2),
+  button: {
+    margin: spacing.lg,
+    borderRadius: scale(12),
+    paddingVertical: verticalScale(14),
+    alignItems: 'center',
+    minHeight: MIN_TOUCH_TARGET,
   },
-  loading: {
-    marginVertical: spacing.sm,
+  buttonLabel: {
+    color: '#fff',
+    fontSize: responsiveFont(16),
+  },
+  error: {
+    color: '#DC2626',
+    fontSize: responsiveFont(14),
   },
 });

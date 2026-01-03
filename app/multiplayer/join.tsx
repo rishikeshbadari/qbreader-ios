@@ -6,27 +6,30 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useThemeColor } from '@/hooks/useThemeColor';
-import { MIN_TOUCH_TARGET, scale, spacing, verticalScale } from '@/utils/responsive';
+import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 export default function JoinGameScreen() {
-  const { joinSession } = useMultiplayer();
+  const { joinGame } = useMultiplayer();
   const router = useRouter();
+
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState<string>();
+
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
-  const textOnBrand = '#fff';
+  const textColor = useThemeColor({}, 'text');
+  const mutedColor = useThemeColor({}, 'muted');
 
   const handleJoin = async () => {
-    if (isJoining || !code.trim()) {
-      return;
-    }
+    if (isJoining || !code.trim()) return;
+
     setIsJoining(true);
     setError(undefined);
+
     try {
-      await joinSession(code.trim(), name.trim() || 'Player');
+      await joinGame(code.trim(), name.trim() || 'Player');
       router.replace({ pathname: '/multiplayer/game', params: { sessionId: code.trim() } });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to join game.');
@@ -37,46 +40,47 @@ export default function JoinGameScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">Join a game</ThemedText>
-      <View style={styles.field}>
-        <ThemedText style={styles.label}>Your name</ThemedText>
+      <View style={styles.header}>
+        <ThemedText type="title">Join a Game</ThemedText>
+        <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
+          Enter the game code shared by the host.
+        </ThemedText>
+      </View>
+
+      <View style={styles.section}>
+        <ThemedText type="subtitle" style={styles.label}>Your Name</ThemedText>
         <TextInput
           placeholder="Player"
-          placeholderTextColor={textOnBrand}
-          selectionColor={textOnBrand}
-          style={[
-            styles.input,
-            {
-              borderColor,
-              backgroundColor: brandColor,
-              color: textOnBrand,
-            },
-          ]}
+          placeholderTextColor={mutedColor}
+          style={[styles.input, { borderColor, color: textColor }]}
           value={name}
           onChangeText={setName}
         />
       </View>
-      <View style={styles.field}>
-        <ThemedText style={styles.label}>Game code</ThemedText>
+
+      <View style={styles.section}>
+        <ThemedText type="subtitle" style={styles.label}>Game Code</ThemedText>
         <TextInput
-          style={[styles.input, { borderColor }]}
-          placeholder="e.g. A1B2C3"
-          placeholderTextColor="#94A3B8"
+          placeholder="e.g. A1B2C3D4"
+          placeholderTextColor={mutedColor}
+          style={[styles.input, { borderColor, color: textColor }]}
           autoCapitalize="characters"
           value={code}
           onChangeText={setCode}
         />
       </View>
-      {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
+
+      {error && <ThemedText style={styles.error}>{error}</ThemedText>}
+
       <Pressable
         onPress={handleJoin}
-        disabled={isJoining}
+        disabled={isJoining || !code.trim()}
         style={({ pressed }) => [
           styles.button,
-          { backgroundColor: brandColor, opacity: isJoining ? 0.5 : pressed ? 0.8 : 1 },
+          { backgroundColor: brandColor, opacity: isJoining || !code.trim() ? 0.5 : pressed ? 0.8 : 1 },
         ]}>
         <ThemedText type="defaultSemiBold" style={styles.buttonLabel}>
-          {isJoining ? 'Joining…' : 'Join game'}
+          {isJoining ? 'Joining…' : 'Join Game'}
         </ThemedText>
       </Pressable>
     </ThemedView>
@@ -87,37 +91,41 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: spacing.lg,
-    gap: spacing.md,
+    gap: spacing.lg,
   },
-  field: {
-    gap: spacing.xs + scale(2),
+  header: {
+    gap: spacing.xs,
+  },
+  subtitle: {
+    fontSize: responsiveFont(14),
+  },
+  section: {
+    gap: spacing.sm,
   },
   label: {
-    opacity: 0.9,
+    fontSize: responsiveFont(16),
   },
   input: {
-    borderWidth: scale(1),
-    borderRadius: scale(12),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(10),
     paddingHorizontal: spacing.md,
-    paddingVertical: verticalScale(10),
-    color: '#0f172a',
-    backgroundColor: 'rgba(15, 23, 42, 0.02)',
+    paddingVertical: verticalScale(12),
+    fontSize: responsiveFont(16),
     minHeight: MIN_TOUCH_TARGET,
   },
   button: {
-    marginTop: spacing.sm,
     borderRadius: scale(12),
     paddingVertical: verticalScale(14),
     alignItems: 'center',
-    justifyContent: 'center',
     minHeight: MIN_TOUCH_TARGET,
+    marginTop: spacing.sm,
   },
   buttonLabel: {
     color: '#fff',
-    letterSpacing: 0.4,
+    fontSize: responsiveFont(16),
   },
   error: {
     color: '#DC2626',
-    marginTop: spacing.xs,
+    fontSize: responsiveFont(14),
   },
 });

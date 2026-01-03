@@ -4,7 +4,7 @@ export default function MultiplayerLayout() {
   return (
     <Stack
       screenOptions={{
-        headerTitle: 'Multiplayer',
+        headerShown: false,
       }}
     />
   );

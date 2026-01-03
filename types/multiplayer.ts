@@ -1,49 +1,55 @@
 import type { AnswerResult, Tossup } from '@/types/qb';
 
-export type MultiplayerPlayer = {
+/** A player in a multiplayer session */
+export type Player = {
   id: string;
   name: string;
 };
 
-export type MultiplayerSettings = {
+/** Game settings shared across all players */
+export type GameSettings = {
   difficulties: number[];
   categories: string[];
   revealSpeed: number;
 };
 
-export type MultiplayerSessionStatus = 'idle' | 'lobby' | 'in_progress' | 'ended';
+/** Session lifecycle states */
+export type SessionStatus = 'idle' | 'lobby' | 'playing' | 'ended';
 
-export type MultiplayerBuzz = {
+/** A player's buzz attempt on a question */
+export type Buzz = {
   playerId: string;
   timestamp: number;
   answer: string;
-  result?: { directive: string; note?: string };
+  result?: AnswerResult;
 };
 
-export type MultiplayerQuestionRecord = {
+/** Record of a single question in the game */
+export type QuestionRecord = {
   question: Tossup;
-  buzzes: MultiplayerBuzz[];
+  buzzes: Buzz[];
   winnerId?: string;
 };
 
-export type MultiplayerSessionSummary = {
+/** Complete game summary for review */
+export type GameSummary = {
   sessionId: string;
-  players: MultiplayerPlayer[];
-  settings: MultiplayerSettings;
-  questions: MultiplayerQuestionRecord[];
+  players: Player[];
+  settings: GameSettings;
+  questions: QuestionRecord[];
   endedAt?: number;
 };
 
-export type MultiplayerEvent =
-  | { type: 'player:joined'; payload: MultiplayerPlayer }
-  | { type: 'players:sync'; payload: { players: MultiplayerPlayer[] } }
-  | { type: 'player:left'; payload: { playerId: string } }
-  | { type: 'session:pause'; payload: { reason?: string } }
-  | { type: 'session:start'; payload: { settings: MultiplayerSettings; seed: string } }
-  | { type: 'session:end'; payload: { reason?: string } }
-  | { type: 'question:next'; payload: { requesterId: string } }
-  | { type: 'question:new'; payload: { tossup: Tossup; seed: string } }
-  | { type: 'buzz:lock'; payload: { playerId: string } }
-  | { type: 'buzz'; payload: MultiplayerBuzz }
-  | { type: 'buzz:result'; payload: MultiplayerBuzz }
-  | { type: 'question:end'; payload: { winnerId?: string } };
+/** Events sent between players over the transport */
+export type GameEvent =
+  | { type: 'player:join'; player: Player }
+  | { type: 'player:leave'; playerId: string }
+  | { type: 'players:sync'; players: Player[] }
+  | { type: 'game:start'; settings: GameSettings }
+  | { type: 'game:pause' }
+  | { type: 'game:end' }
+  | { type: 'question:new'; tossup: Tossup }
+  | { type: 'question:request' }
+  | { type: 'buzz:lock'; playerId: string }
+  | { type: 'buzz:submit'; buzz: Buzz }
+  | { type: 'buzz:result'; buzz: Buzz };
