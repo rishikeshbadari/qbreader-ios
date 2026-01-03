@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { QuizGameLayout } from '@/components/quiz/QuizGameLayout';
 import { ThemedText } from '@/components/ThemedText';
+import { Colors } from '@/constants/Colors';
 import { useQuizSession } from '@/hooks/useQuizSession';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { responsiveFont, scale, spacing } from '@/utils/responsive';
@@ -44,9 +45,14 @@ export default function PlayScreen() {
     }, [])
   );
 
+  // Show overlay when:
+  // - idle (user hasn't started yet)
+  // - paused with a current question (user navigated away mid-question)
+  // - active but no question loaded yet (waiting for first question)
   const showPlayOverlay =
-    playState !== 'active' &&
-    (playState === 'idle' || (playState === 'paused' && currentQuestion && !lastResult));
+    playState === 'idle' ||
+    (playState === 'paused' && currentQuestion && !lastResult) ||
+    (playState === 'active' && !currentQuestion && !loadingQuestion && !error);
 
   const handlePlayOverlayPress = () => {
     if (playState === 'idle') {
@@ -55,6 +61,10 @@ export default function PlayScreen() {
       void loadNextQuestion();
     } else if (playState === 'paused') {
       setPlayState('active');
+    } else if (playState === 'active' && !currentQuestion) {
+      // Edge case: active but no question loaded - try again
+      clearError();
+      void loadNextQuestion();
     }
   };
 
@@ -79,8 +89,10 @@ export default function PlayScreen() {
   const overlayBackground = colorScheme === 'dark' ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.95)';
   const overlayTextColor = colorScheme === 'dark' ? '#fff' : '#0f172a';
 
+  const backgroundColor = Colors[colorScheme ?? 'light'].background;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
       <QuizGameLayout
         title="QuizBowl Practice"
         subtitle="Powered by QBReader — fresh tossups every time you buzz."
@@ -103,7 +115,7 @@ export default function PlayScreen() {
                 { backgroundColor: overlayBackground, opacity: pressed ? 0.9 : 1 },
               ]}>
               <ThemedText type="defaultSemiBold" style={[styles.playOverlayLabel, { color: overlayTextColor }]}>
-                {playState === 'paused' ? 'Tap to Continue' : 'Tap to Play'}
+                {playState === 'paused' ? 'Tap to Continue' : playState === 'active' ? 'Tap to Load Question' : 'Tap to Play'}
               </ThemedText>
             </Pressable>
           ) : undefined

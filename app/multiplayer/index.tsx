@@ -1,20 +1,27 @@
 import { Link } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 export default function MultiplayerHome() {
+  const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
+  const backgroundColor = Colors[colorScheme ?? 'light'].background;
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
   const mutedColor = useThemeColor({}, 'muted');
   const textColor = useThemeColor({}, 'text');
 
   return (
-    <ThemedView style={styles.container}>
-      <View style={styles.header}>
+    <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
+      <View style={styles.content}>
+        <View style={styles.header}>
         <ThemedText type="title">Multiplayer</ThemedText>
         <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
           Play locally over Wi-Fi or Bluetooth with friends nearby.
@@ -45,12 +52,16 @@ export default function MultiplayerHome() {
           </Pressable>
         </Link>
       </View>
+      </View>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  content: {
     flex: 1,
     padding: spacing.lg,
     justifyContent: 'center',

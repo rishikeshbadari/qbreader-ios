@@ -243,8 +243,7 @@ export function QuestionCard({
             <ThemedText style={styles.questionBody}>
               {shouldAnimateQuestion
                 ? displayedQuestion
-                : tossup?.question ??
-                  'Tap “Next Tossup” to start practicing with a random clue.'}
+                : tossup?.question ?? ''}
             </ThemedText>
             {showAnswer ? (
               <View style={styles.answerBlock}>

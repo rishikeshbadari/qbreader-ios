@@ -6,6 +6,8 @@ import { SessionHistoryList } from '@/components/quiz/SessionHistoryList';
 import { SessionStats, type SessionStatsCardKey } from '@/components/quiz/SessionStats';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { useQuizSession } from '@/hooks/useQuizSession';
 import { useSessionStats } from '@/hooks/useSessionStats';
 import { normalizeDirective } from '@/utils/directives';
@@ -36,6 +38,8 @@ const FILTER_METADATA: Record<
 };
 
 export default function HistoryScreen() {
+  const colorScheme = useColorScheme();
+  const backgroundColor = Colors[colorScheme ?? 'light'].background;
   const { history } = useQuizSession();
   const stats = useSessionStats();
   const [activeFilter, setActiveFilter] = useState<HistoryFilter | null>(null);
@@ -81,7 +85,7 @@ export default function HistoryScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
       <ThemedView style={styles.container}>
         {showList && activeFilter ? (
           <SessionHistoryList

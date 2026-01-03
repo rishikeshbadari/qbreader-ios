@@ -5,6 +5,8 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { responsiveFont, scale, spacing, verticalScale, deviceMetrics } from '@/utils/responsive';
@@ -16,7 +18,9 @@ const sectionPadding = isCompactScreen ? spacing.md : spacing.lg;
 const chipPaddingV = isCompactScreen ? verticalScale(6) : verticalScale(8);
 
 export default function SettingsScreen() {
+  const colorScheme = useColorScheme();
   const tabBarHeight = useBottomTabBarHeight();
+  const backgroundColor = Colors[colorScheme ?? 'light'].background;
   const {
     availableDifficulties,
     availableCategories,
@@ -98,7 +102,7 @@ export default function SettingsScreen() {
   const showCategoryPlaceholder = loadingOptions && availableCategories.length === 0;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
       <View style={[styles.content, { paddingBottom: tabBarHeight }]}>
         {/* Header */}
         <View style={styles.header}>

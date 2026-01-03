@@ -1,14 +1,18 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 export default function JoinGameScreen() {
+  const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
   const { joinGame } = useMultiplayer();
   const router = useRouter();
 
@@ -39,7 +43,7 @@ export default function JoinGameScreen() {
   };
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
       <View style={styles.header}>
         <ThemedText type="title">Join a Game</ThemedText>
         <ThemedText style={[styles.subtitle, { color: mutedColor }]}>

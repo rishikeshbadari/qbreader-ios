@@ -1,13 +1,17 @@
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { responsiveFont, scale, spacing, verticalScale, MIN_TOUCH_TARGET } from '@/utils/responsive';
 
 export default function MultiplayerSummaryScreen() {
+  const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
   const { summary } = useMultiplayer();
   const router = useRouter();
 
@@ -18,20 +22,20 @@ export default function MultiplayerSummaryScreen() {
   const successColor = useThemeColor({}, 'success');
   const errorColor = useThemeColor({}, 'error');
 
-  const handleDone = () => router.replace('/multiplayer');
+  const handleDone = () => router.replace('/(tabs)/multiplayer');
 
   if (!summary) {
     return (
-      <ThemedView style={styles.container}>
+      <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
         <ThemedText type="title">No Game Data</ThemedText>
-        <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
-          There's no game summary to display.
-        </ThemedText>
-        <Pressable
-          onPress={handleDone}
-          style={[styles.button, { backgroundColor: brandColor }]}>
-          <ThemedText style={styles.buttonLabel}>Back to Multiplayer</ThemedText>
-        </Pressable>
+          <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
+            There's no game summary to display.
+          </ThemedText>
+          <Pressable
+            onPress={handleDone}
+            style={[styles.button, { backgroundColor: brandColor }]}>
+            <ThemedText style={styles.buttonLabel}>Back to Multiplayer</ThemedText>
+          </Pressable>
       </ThemedView>
     );
   }
@@ -39,7 +43,7 @@ export default function MultiplayerSummaryScreen() {
   const playerNames = summary.players.map(p => p.name).join(', ');
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
       <View style={styles.header}>
         <ThemedText type="title">Game Summary</ThemedText>
         <ThemedText style={[styles.subtitle, { color: mutedColor }]}>

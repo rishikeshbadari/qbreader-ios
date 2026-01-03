@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -7,7 +7,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 
 import { QuizGameLayout } from '@/components/quiz/QuizGameLayout';
@@ -22,6 +22,7 @@ import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from 
 export default function MultiplayerGameScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
 
   const {
     sessionId,
@@ -29,14 +30,23 @@ export default function MultiplayerGameScreen() {
     settings,
     currentQuestion,
     currentResult,
+    currentBuzzer,
     isLoading,
     isBuzzLocked,
+    isSelfLockedOut,
     startNextQuestion,
     submitAnswer,
     pauseGame,
     updateSettings,
     endGame,
   } = useMultiplayer();
+
+  // Auto-navigate to summary when game ends (e.g., when another player leaves)
+  useEffect(() => {
+    if (status === 'ended') {
+      router.replace('/multiplayer/summary');
+    }
+  }, [status, router]);
 
   const { availableCategories, availableDifficulties, revealSpeed } = useSettings();
   const [showSettings, setShowSettings] = useState(false);
@@ -103,7 +113,7 @@ export default function MultiplayerGameScreen() {
   const showOverlay = !isPlaying && status !== 'ended' && !currentQuestion;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <ThemedView style={[styles.gameContainer, { paddingTop: insets.top }]}>
       <QuizGameLayout
         title="Multiplayer"
         subtitle={sessionId ? `Game code: ${sessionId}` : 'Local multiplayer game'}
@@ -113,7 +123,7 @@ export default function MultiplayerGameScreen() {
               <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>Settings</ThemedText>
             </Pressable>
             <Pressable onPress={handleEndGame} style={[styles.headerButton, { borderColor }]}>
-              <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>End</ThemedText>
+              <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>Leave</ThemedText>
             </Pressable>
           </View>
         }
@@ -123,7 +133,8 @@ export default function MultiplayerGameScreen() {
         result={currentResult}
         revealSpeed={settings?.revealSpeed}
         isPlaying={isPlaying}
-        isBuzzLocked={isBuzzLocked}
+        isBuzzLocked={isBuzzLocked || isSelfLockedOut}
+        buzzerName={currentBuzzer?.name}
         onBuzz={() => {}}
         onSubmitAnswer={submitAnswer}
         onNext={startNextQuestion}
@@ -226,12 +237,12 @@ export default function MultiplayerGameScreen() {
           </ThemedView>
         </View>
       </Modal>
-    </SafeAreaView>
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  gameContainer: {
     flex: 1,
   },
   headerButtons: {

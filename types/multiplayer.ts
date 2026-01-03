@@ -47,9 +47,10 @@ export type GameEvent =
   | { type: 'players:sync'; players: Player[] }
   | { type: 'game:start'; settings: GameSettings }
   | { type: 'game:pause' }
-  | { type: 'game:end' }
+  | { type: 'game:end'; summary?: GameSummary }
   | { type: 'question:new'; tossup: Tossup }
   | { type: 'question:request' }
   | { type: 'buzz:lock'; playerId: string }
+  | { type: 'buzz:unlock'; lockedOutPlayers: string[]; allLockedOut?: boolean; lastResult?: AnswerResult }
   | { type: 'buzz:submit'; buzz: Buzz }
   | { type: 'buzz:result'; buzz: Buzz };

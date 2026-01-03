@@ -34,6 +34,7 @@ type Props = {
   // Game state
   isPlaying: boolean;
   isBuzzLocked?: boolean;
+  buzzerName?: string; // Name of player who is currently buzzing (multiplayer)
 
   // Callbacks
   onBuzz: () => void;
@@ -59,6 +60,7 @@ export function QuizGameLayout({
   revealSpeed,
   isPlaying,
   isBuzzLocked = false,
+  buzzerName,
   onBuzz,
   onSubmitAnswer,
   onNext,
@@ -180,6 +182,14 @@ export function QuizGameLayout({
               showRevealButton={false}
             />
             {overlay}
+            {/* Show buzzer name when someone else is buzzing */}
+            {buzzerName && isBuzzLocked && !hasBuzzed && !showResult && (
+              <View style={[styles.buzzerOverlay, { backgroundColor: colorScheme === 'dark' ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)' }]}>
+                <ThemedText type="defaultSemiBold" style={styles.buzzerText}>
+                  {buzzerName} buzzed in...
+                </ThemedText>
+              </View>
+            )}
           </View>
 
           {/* Action button - Buzz or Next */}
@@ -293,6 +303,18 @@ const styles = StyleSheet.create({
   },
   answerInputContainer: {
     width: '100%',
+  },
+  buzzerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: scale(24),
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  buzzerText: {
+    fontSize: responsiveFont(18),
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
 });
 

@@ -34,8 +34,10 @@ type MultiplayerContextValue = {
   settings: GameSettings | null;
   currentQuestion: Tossup | null;
   currentResult: AnswerResult | null;
+  currentBuzzer: Player | null; // Who is currently buzzing
   isLoading: boolean;
   isBuzzLocked: boolean;
+  isSelfLockedOut: boolean; // True if this player already buzzed incorrectly
   summary: GameSummary | null;
   selfPlayer: Player | null;
 
@@ -66,14 +68,19 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const [settings, setSettings] = useState<GameSettings | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<Tossup | null>(null);
   const [currentResult, setCurrentResult] = useState<AnswerResult | null>(null);
+  const [currentBuzzer, setCurrentBuzzer] = useState<Player | null>(null); // Who is currently buzzing
   const [isLoading, setIsLoading] = useState(false);
   const [isBuzzLocked, setIsBuzzLocked] = useState(false);
+  const [lockedOutPlayers, setLockedOutPlayers] = useState<string[]>([]); // Players who buzzed incorrectly
   const [summary, setSummary] = useState<GameSummary | null>(null);
   const [selfPlayer, setSelfPlayer] = useState<Player | null>(null);
 
+  // Derived: is current player locked out from buzzing on this question
+  const isSelfLockedOut = selfPlayer ? lockedOutPlayers.includes(selfPlayer.id) : false;
+
   // Refs for accessing current values in callbacks
-  const stateRef = useRef({ players, settings, currentQuestion, currentResult, selfPlayer });
-  stateRef.current = { players, settings, currentQuestion, currentResult, selfPlayer };
+  const stateRef = useRef({ players, settings, currentQuestion, currentResult, selfPlayer, lockedOutPlayers, summary });
+  stateRef.current = { players, settings, currentQuestion, currentResult, selfPlayer, lockedOutPlayers, summary };
 
   // ───────────────────────────────────────────────────────────────────────────
   // Helpers
@@ -101,8 +108,10 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setSettings(null);
     setCurrentQuestion(null);
     setCurrentResult(null);
+    setCurrentBuzzer(null);
     setIsLoading(false);
     setIsBuzzLocked(false);
+    setLockedOutPlayers([]);
     setSummary(null);
     setSelfPlayer(null);
   }, []);
@@ -142,6 +151,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setIsLoading(true);
     setCurrentResult(null);
     setIsBuzzLocked(false);
+    setLockedOutPlayers([]); // Reset locked out players for new question
 
     try {
       const tossup = await fetchRandomTossup(new AbortController().signal, {
@@ -160,9 +170,12 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   }, [send, addQuestionToSummary]);
 
   const judgeAndBroadcastResult = useCallback(async (buzz: Buzz) => {
-    const { currentQuestion, currentResult } = stateRef.current;
+    const { currentQuestion, currentResult, lockedOutPlayers, players } = stateRef.current;
     if (!currentQuestion || currentResult) return;
 
+    // Find the buzzer player for display
+    const buzzerPlayer = players.find(p => p.id === buzz.playerId) ?? null;
+    setCurrentBuzzer(buzzerPlayer);
     setIsBuzzLocked(true);
     await send({ type: 'buzz:lock', playerId: buzz.playerId });
 
@@ -172,9 +185,37 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     ) as AnswerResult;
 
     const resultBuzz: Buzz = { ...buzz, result };
-    setCurrentResult(result);
     addBuzzToSummary(resultBuzz);
     await send({ type: 'buzz:result', buzz: resultBuzz });
+
+    // Check if answer was incorrect (not accepted)
+    const isCorrect = result.directive === 'accept';
+    
+    if (isCorrect) {
+      // Correct answer - keep buzz locked, set result
+      setCurrentResult(result);
+      setCurrentBuzzer(null);
+    } else {
+      // Incorrect answer - add player to locked out list
+      const newLockedOut = [...lockedOutPlayers, buzz.playerId];
+      setLockedOutPlayers(newLockedOut);
+      setCurrentBuzzer(null);
+      
+      // Check if all players are now locked out
+      const allPlayersLockedOut = players.every(p => newLockedOut.includes(p.id));
+      
+      if (allPlayersLockedOut) {
+        // Everyone has tried and failed - show result so they can move on
+        setCurrentResult(result);
+        setIsBuzzLocked(true);
+        await send({ type: 'buzz:unlock', lockedOutPlayers: newLockedOut, allLockedOut: true, lastResult: result });
+      } else {
+        // Others can still try - unlock buzzing for them
+        setIsBuzzLocked(false);
+        setCurrentResult(null);
+        await send({ type: 'buzz:unlock', lockedOutPlayers: newLockedOut });
+      }
+    }
   }, [send, addBuzzToSummary]);
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -200,8 +241,17 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       }
 
       case 'player:leave': {
+        // When any player leaves, end the game for everyone
+        const { summary } = stateRef.current;
         setPlayers(prev => prev.filter(p => p.id !== event.playerId));
-        setSummary(prev => prev ? { ...prev, players: prev.players.filter(p => p.id !== event.playerId) } : prev);
+        setStatus('ended');
+        setIsBuzzLocked(true);
+        const finalSummary = summary ? { ...summary, endedAt: Date.now() } : null;
+        setSummary(finalSummary);
+        // Broadcast game end to all players with the current summary
+        if (isCoordinator() && finalSummary) {
+          void send({ type: 'game:end', summary: finalSummary });
+        }
         break;
       }
 
@@ -220,7 +270,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setSettings(event.settings);
         setStatus('playing');
         setIsBuzzLocked(false);
+        setLockedOutPlayers([]);
         setCurrentResult(null);
+        setCurrentBuzzer(null);
         break;
       }
 
@@ -233,14 +285,21 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       case 'game:end': {
         setStatus('ended');
         setIsBuzzLocked(true);
-        setSummary(prev => prev ? { ...prev, endedAt: Date.now() } : prev);
+        // Use provided summary if available, otherwise update existing
+        if (event.summary) {
+          setSummary(event.summary);
+        } else {
+          setSummary(prev => prev ? { ...prev, endedAt: Date.now() } : prev);
+        }
         break;
       }
 
       case 'question:new': {
         setCurrentQuestion(event.tossup);
         setCurrentResult(null);
+        setCurrentBuzzer(null);
         setIsBuzzLocked(false);
+        setLockedOutPlayers([]); // Reset locked out players for new question
         setStatus('playing');
         addQuestionToSummary(event.tossup);
         break;
@@ -256,6 +315,27 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
       case 'buzz:lock': {
         setIsBuzzLocked(true);
+        // Set the buzzer for display
+        const { players } = stateRef.current;
+        const buzzer = players.find(p => p.id === event.playerId) ?? null;
+        setCurrentBuzzer(buzzer);
+        break;
+      }
+
+      case 'buzz:unlock': {
+        // After an incorrect answer
+        setLockedOutPlayers(event.lockedOutPlayers);
+        setCurrentBuzzer(null);
+        
+        if (event.allLockedOut && event.lastResult) {
+          // Everyone has tried and failed - show result so they can move on
+          setCurrentResult(event.lastResult);
+          setIsBuzzLocked(true);
+        } else {
+          // Others can still try - unlock buzzing for them
+          setIsBuzzLocked(false);
+          setCurrentResult(null);
+        }
         break;
       }
 
@@ -268,8 +348,12 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       }
 
       case 'buzz:result': {
-        setCurrentResult(event.buzz.result ?? null);
-        setIsBuzzLocked(true);
+        const isCorrect = event.buzz.result?.directive === 'accept';
+        if (isCorrect) {
+          setCurrentResult(event.buzz.result ?? null);
+          setIsBuzzLocked(true);
+        }
+        // For incorrect answers, buzz:unlock event will handle the state
         addBuzzToSummary(event.buzz);
         break;
       }
@@ -335,8 +419,11 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   }, [isLoading, isCoordinator, fetchAndBroadcastQuestion, send]);
 
   const submitAnswer = useCallback(async (answer: string) => {
-    const { selfPlayer, currentQuestion, currentResult } = stateRef.current;
+    const { selfPlayer, currentQuestion, currentResult, lockedOutPlayers } = stateRef.current;
     if (!currentQuestion || currentResult || !selfPlayer) return;
+    
+    // Check if player is locked out (already buzzed incorrectly)
+    if (lockedOutPlayers.includes(selfPlayer.id)) return;
 
     setIsBuzzLocked(true);
     const buzz: Buzz = { playerId: selfPlayer.id, timestamp: Date.now(), answer };
@@ -361,13 +448,18 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   }, []);
 
   const endGame = useCallback(async () => {
-    const { selfPlayer } = stateRef.current;
+    const { selfPlayer, summary } = stateRef.current;
+    const finalSummary = summary ? { ...summary, endedAt: Date.now() } : null;
+    
+    // Broadcast game end to all players
+    await send({ type: 'game:end', summary: finalSummary ?? undefined });
+    
     if (selfPlayer) {
       await send({ type: 'player:leave', playerId: selfPlayer.id });
     }
     await transportRef.current.disconnect();
     setStatus('ended');
-    setSummary(prev => prev ? { ...prev, endedAt: Date.now() } : prev);
+    setSummary(finalSummary);
   }, [send]);
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -381,8 +473,10 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     settings,
     currentQuestion,
     currentResult,
+    currentBuzzer,
     isLoading,
     isBuzzLocked,
+    isSelfLockedOut,
     summary,
     selfPlayer,
     hostGame,
@@ -393,8 +487,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     updateSettings,
     endGame,
   }), [
-    sessionId, status, players, settings, currentQuestion, currentResult,
-    isLoading, isBuzzLocked, summary, selfPlayer,
+    sessionId, status, players, settings, currentQuestion, currentResult, currentBuzzer,
+    isLoading, isBuzzLocked, isSelfLockedOut, summary, selfPlayer,
     hostGame, joinGame, startNextQuestion, submitAnswer, pauseGame, updateSettings, endGame,
   ]);
 
