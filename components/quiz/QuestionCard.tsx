@@ -22,8 +22,6 @@ interface Props {
   revealSpeedOverride?: number;
   showRevealButton?: boolean;
   showMeta?: boolean;
-  anchorToBottomOnBuzz?: boolean;
-  scrollAnchorKey?: number;
 }
 
 export function QuestionCard({
@@ -38,8 +36,6 @@ export function QuestionCard({
   revealSpeedOverride,
   showRevealButton = true,
   showMeta = true,
-  anchorToBottomOnBuzz = false,
-  scrollAnchorKey,
 }: Props) {
   const { revealSpeed } = useSettings();
   const effectiveRevealSpeed =
@@ -54,13 +50,11 @@ export function QuestionCard({
   const animationTimeout = useRef<NodeJS.Timeout | null>(null);
   const buzzedRef = useRef(isBuzzed);
   const questionScrollRef = useRef<ScrollView | null>(null);
-  const pendingScrollRef = useRef<'top' | 'bottom' | null>(null);
   const [hasRevealedFullQuestion, setHasRevealedFullQuestion] = useState(false);
   const wordsRef = useRef<string[]>([]);
   const revealIndexRef = useRef(0);
   const revealIntervalMs = getRevealIntervalMs(effectiveRevealSpeed);
   const scrollPaddingBottom = 0;
-  const shouldAnchorToBottom = Boolean(anchorToBottomOnBuzz && isBuzzed && !showAnswer);
   const shouldAnimateQuestion =
     Boolean(tossup?.question) &&
     !isLoading &&
@@ -74,7 +68,6 @@ export function QuestionCard({
 
   useEffect(() => {
     setHasRevealedFullQuestion(false);
-    pendingScrollRef.current = null;
   }, [tossup?.id]);
 
   const clearAnimationTimeout = () => {
@@ -170,38 +163,17 @@ export function QuestionCard({
     };
   }, [isRevealRunning, tossup?.id, revealIntervalMs]);
 
+  // Scroll effect
   useEffect(() => {
-    if (!questionScrollRef.current) {
-      return;
-    }
+    if (!questionScrollRef.current) return;
 
-    if (isRevealRunning || shouldAnchorToBottom) {
-      questionScrollRef.current.scrollToEnd({ animated: isRevealRunning });
+    // Scroll to bottom when: showing answer, during reveal, or after full reveal
+    if (showAnswer || isRevealRunning || hasRevealedFullQuestion) {
+      questionScrollRef.current.scrollToEnd({ animated: true });
     } else {
       questionScrollRef.current.scrollTo({ y: 0, animated: false });
     }
-  }, [displayedQuestion, isRevealRunning, shouldAnchorToBottom]);
-
-  useEffect(() => {
-    if (!questionScrollRef.current || !shouldAnchorToBottom) {
-      return;
-    }
-    requestAnimationFrame(() => questionScrollRef.current?.scrollToEnd({ animated: false }));
-  }, [scrollAnchorKey, shouldAnchorToBottom]);
-
-  useEffect(() => {
-    if (!questionScrollRef.current) {
-      return;
-    }
-
-    if (showAnswer || hasRevealedFullQuestion || shouldAnchorToBottom) {
-      questionScrollRef.current.scrollToEnd({ animated: true });
-      pendingScrollRef.current = 'bottom';
-    } else if (pendingScrollRef.current !== 'top') {
-      questionScrollRef.current.scrollTo({ y: 0, animated: true });
-      pendingScrollRef.current = 'top';
-    }
-  }, [showAnswer, hasRevealedFullQuestion, shouldAnchorToBottom]);
+  }, [displayedQuestion, showAnswer, isRevealRunning, hasRevealedFullQuestion]);
 
   useEffect(() => {
     onFullQuestionRevealChange?.(hasRevealedFullQuestion);
@@ -266,23 +238,7 @@ export function QuestionCard({
               canShowRevealButton && styles.questionScrollWithButton,
               { paddingBottom: scrollPaddingBottom },
             ]}
-            onLayout={() => {
-              if (shouldAnchorToBottom) {
-                requestAnimationFrame(() =>
-                  questionScrollRef.current?.scrollToEnd({ animated: false })
-                );
-              }
-            }}
-            onContentSizeChange={() => {
-              if (shouldAnchorToBottom) {
-                requestAnimationFrame(() =>
-                  questionScrollRef.current?.scrollToEnd({ animated: false })
-                );
-              }
-            }}
             keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            nestedScrollEnabled
             showsVerticalScrollIndicator={false}>
             <ThemedText style={styles.questionBody}>
               {shouldAnimateQuestion

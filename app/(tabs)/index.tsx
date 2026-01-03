@@ -1,8 +1,8 @@
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
+import { BlurView } from 'expo-blur';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView,
   Keyboard,
   Platform,
   Pressable,
@@ -31,131 +31,101 @@ export default function PlayScreen() {
     lastResult,
     clearError,
   } = useQuizSession();
+
   const [answer, setAnswer] = useState('');
   const [hasBuzzed, setHasBuzzed] = useState(false);
   const [playState, setPlayState] = useState<'idle' | 'active' | 'paused'>('idle');
   const [hasFullyRevealedQuestion, setHasFullyRevealedQuestion] = useState(false);
+
   const borderColor = useThemeColor({}, 'border');
   const dangerColor = useThemeColor({}, 'error');
   const brandColor = useThemeColor({}, 'brand');
   const skipTextColor = useThemeColor({}, 'text');
   const tabBarHeight = useBottomTabBarHeight();
-  const extraFooterPadding = Platform.OS === 'ios' ? tabBarHeight : 0;
   const colorScheme = useColorScheme();
   const insets = useSafeAreaInsets();
+
+  // Refs for callbacks that need current values
   const playStateRef = useRef(playState);
-  const currentQuestionRef = useRef(currentQuestion);
   const lastResultRef = useRef(lastResult);
   const hasBuzzedRef = useRef(hasBuzzed);
   const answerRef = useRef(answer);
+  const currentQuestionRef = useRef(currentQuestion);
   const submittedRef = useRef(false);
-  const [keyboardToggle, setKeyboardToggle] = useState(0);
 
+  // Sync refs
+  useEffect(() => { playStateRef.current = playState; }, [playState]);
+  useEffect(() => { lastResultRef.current = lastResult; }, [lastResult]);
+  useEffect(() => { hasBuzzedRef.current = hasBuzzed; }, [hasBuzzed]);
+  useEffect(() => { answerRef.current = answer; }, [answer]);
+  useEffect(() => { currentQuestionRef.current = currentQuestion; }, [currentQuestion]);
+
+  // Reset on new question
   useEffect(() => {
     setAnswer('');
     setHasBuzzed(false);
     setHasFullyRevealedQuestion(false);
-  }, [currentQuestion?.id]);
-
-  useEffect(() => {
-    playStateRef.current = playState;
-  }, [playState]);
-
-  useEffect(() => {
-    currentQuestionRef.current = currentQuestion;
-  }, [currentQuestion]);
-
-  useEffect(() => {
-    lastResultRef.current = lastResult;
-  }, [lastResult]);
-
-  useEffect(() => {
-    hasBuzzedRef.current = hasBuzzed;
-    if (!hasBuzzed) {
-      submittedRef.current = false;
-    }
-  }, [hasBuzzed]);
-
-  useEffect(() => {
-    answerRef.current = answer;
-  }, [answer]);
-
-  useEffect(() => {
     submittedRef.current = false;
   }, [currentQuestion?.id]);
 
+  // Reset submitted flag when buzz state changes
   useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', () => {
-      setKeyboardToggle((prev) => prev + 1);
-    });
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardToggle((prev) => prev + 1);
+    if (!hasBuzzed) submittedRef.current = false;
+  }, [hasBuzzed]);
+
+  // Auto-submit empty answer when keyboard hides
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidHide', () => {
       if (
         playStateRef.current !== 'active' ||
         !hasBuzzedRef.current ||
         lastResultRef.current ||
-        submittedRef.current
-      ) {
-        return;
-      }
-
-      if (answerRef.current.trim().length > 0) {
-        return;
-      }
+        submittedRef.current ||
+        answerRef.current.trim().length > 0
+      ) return;
 
       submittedRef.current = true;
       judgeAnswer('');
     });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
+    return () => sub.remove();
   }, [judgeAnswer]);
+
+  // Pause when leaving screen (only on blur, not on state changes)
   useFocusEffect(
     useCallback(() => {
       return () => {
-        if (
-          playStateRef.current === 'active' &&
-          currentQuestionRef.current &&
-          !lastResultRef.current
-        ) {
+        if (playStateRef.current === 'active' && currentQuestionRef.current && !lastResultRef.current) {
           setPlayState('paused');
         }
       };
     }, [])
   );
 
-  type ButtonMode = 'skip' | 'show-answer' | 'next';
-  const buttonMode: ButtonMode = lastResult
-    ? 'next'
-    : hasFullyRevealedQuestion
-      ? 'show-answer'
-      : 'skip';
+  // Derived state
+  const isAnswering = hasBuzzed && playState === 'active' && !lastResult;
+  const controlsDisabled = playState !== 'active';
+  const buttonMode = lastResult ? 'next' : hasFullyRevealedQuestion ? 'show-answer' : 'skip';
 
+  const showPlayOverlay =
+    playState !== 'active' &&
+    (playState === 'idle' || (playState === 'paused' && currentQuestion && !lastResult));
+
+  // Handlers
   const handleSubmit = () => {
-    if (playState !== 'active' || !hasBuzzed || lastResult) {
-      return;
-    }
+    if (playState !== 'active' || !hasBuzzed || lastResult) return;
     submittedRef.current = true;
     judgeAnswer(answer.trim());
   };
 
   const handleBuzz = () => {
-    if (!currentQuestion || loadingQuestion || hasBuzzed || playState !== 'active') {
-      return;
-    }
+    if (!currentQuestion || loadingQuestion || hasBuzzed || playState !== 'active') return;
     setHasBuzzed(true);
     clearError();
   };
 
-  const handleSkip = () => {
-    if (!currentQuestion || loadingQuestion) {
-      return;
-    }
-    if (!lastResult) {
-      skipQuestion();
-    }
+  const handleSkipOrNext = () => {
+    if (!currentQuestion || loadingQuestion) return;
+    if (!lastResult) skipQuestion();
     setAnswer('');
     setHasBuzzed(false);
     clearError();
@@ -163,19 +133,38 @@ export default function PlayScreen() {
   };
 
   const handleShowAnswer = () => {
-    if (
-      !currentQuestion ||
-      loadingQuestion ||
-      hasBuzzed ||
-      lastResult ||
-      playState !== 'active'
-    ) {
-      return;
-    }
+    if (!currentQuestion || loadingQuestion || hasBuzzed || lastResult || playState !== 'active') return;
     setHasBuzzed(true);
     setAnswer('');
     clearError();
     judgeAnswer('');
+  };
+
+  const handlePrimaryAction = () => {
+    Keyboard.dismiss();
+    if (buttonMode === 'next') {
+      // Go to next question
+      setAnswer('');
+      setHasBuzzed(false);
+      clearError();
+      void loadNextQuestion();
+    } else if (buttonMode === 'show-answer') {
+      handleShowAnswer();
+    } else {
+      handleSkipOrNext();
+    }
+  };
+
+  const handlePlayOverlayPress = () => {
+    if (playState === 'idle') {
+      setPlayState('active');
+      setAnswer('');
+      setHasBuzzed(false);
+      clearError();
+      void loadNextQuestion();
+    } else if (playState === 'paused') {
+      setPlayState('active');
+    }
   };
 
   const handleRetry = () => {
@@ -185,205 +174,123 @@ export default function PlayScreen() {
     void loadNextQuestion();
   };
 
-  const handleFullQuestionRevealChange = useCallback((revealed: boolean) => {
-    setHasFullyRevealedQuestion(revealed);
-  }, []);
-
-  const handlePrimaryAction = () => {
-    if (buttonMode === 'show-answer') {
-      Keyboard.dismiss();
-      handleShowAnswer();
-      return;
-    }
-    Keyboard.dismiss();
-    handleSkip();
-  };
-
-  const handleOverlayPress = () => {
-    if (playState === 'idle') {
-      setPlayState('active');
-      setAnswer('');
-      setHasBuzzed(false);
-      clearError();
-      void loadNextQuestion();
-      return;
-    }
-
-    if (playState === 'paused') {
-      setPlayState('active');
-    }
-  };
-
-  const showOverlay =
-    playState !== 'active' &&
-    (playState === 'idle' || (playState === 'paused' && currentQuestion && !lastResult));
-  const overlayLabel = playState === 'paused' ? 'Click to Continue' : 'Click to Play';
-  const overlayBackground =
-    colorScheme === 'dark' ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.95)';
+  // Styling
+  const overlayBackground = colorScheme === 'dark' ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.95)';
   const overlayTextColor = colorScheme === 'dark' ? '#fff' : '#0f172a';
-  const controlsDisabled = playState !== 'active';
-  const isAnswering = hasBuzzed && playState === 'active' && !lastResult;
-  const answerSectionHeight = MIN_TOUCH_TARGET;
-  const contentPaddingBottom = isAnswering
-    ? spacing.sm
-    : spacing.lg + extraFooterPadding + insets.bottom;
-  const showActions = !isAnswering;
+  const contentPaddingBottom = spacing.lg + (Platform.OS === 'ios' ? tabBarHeight : 0) + insets.bottom;
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
-        style={styles.flex}>
-        <ThemedView style={styles.container}>
-          <View style={[styles.content, { paddingBottom: contentPaddingBottom }]}>
-            <View style={styles.mainSection}>
-              <View style={styles.header}>
-                <View style={{ flex: 1 }}>
-                  <ThemedText type="title">QuizBowl Practice</ThemedText>
-                  <ThemedText style={styles.subtitle}>
-                    Powered by QBReader — fresh tossups every time you buzz.
-                  </ThemedText>
-                </View>
-              </View>
-              <View style={styles.questionWrapper}>
-                <QuestionCard
-                  tossup={currentQuestion}
-                  isLoading={loadingQuestion}
-                  error={error}
-                  showAnswer={Boolean(lastResult)}
-                  isBuzzed={hasBuzzed}
-                  result={lastResult}
-                  revealActive={playState === 'active'}
-                  onFullQuestionRevealChange={handleFullQuestionRevealChange}
-                  anchorToBottomOnBuzz
-                  scrollAnchorKey={keyboardToggle}
-                />
-                {showOverlay ? (
-                  <Pressable
-                    onPress={handleOverlayPress}
-                    accessibilityRole="button"
-                    style={({ pressed }) => [
-                      styles.questionOverlay,
-                      {
-                        backgroundColor: overlayBackground,
-                        opacity: pressed ? 0.9 : 1,
-                      },
-                    ]}>
-                    <ThemedText type="defaultSemiBold" style={[styles.overlayLabel, { color: overlayTextColor }]}>
-                      {overlayLabel}
-                    </ThemedText>
-                  </Pressable>
-                ) : null}
-              </View>
-            </View>
-              <View style={styles.footerSection}>
-              {showActions ? (
-                <View style={styles.actions}>
-                  <Pressable
-                    onPress={handleBuzz}
-                    disabled={
-                      !currentQuestion ||
-                      loadingQuestion ||
-                      hasBuzzed ||
-                      Boolean(lastResult) ||
-                      controlsDisabled
-                    }
-                    accessibilityRole="button"
-                    style={({ pressed }) => [
-                      styles.buzzButton,
-                      {
-                        backgroundColor: dangerColor,
-                        opacity:
-                          !currentQuestion || loadingQuestion
-                            ? 0.25
-                            : hasBuzzed || lastResult
-                              ? 0.6
-                              : pressed
-                                ? 0.9
-                                : 1,
-                      },
-                    ]}>
-                    <ThemedText type="defaultSemiBold" style={styles.actionLabel}>
-                      Buzz
-                    </ThemedText>
-                  </Pressable>
-                  <Pressable
-                    onPress={handlePrimaryAction}
-                    disabled={!currentQuestion || loadingQuestion || controlsDisabled}
-                    accessibilityRole="button"
-                    style={({ pressed }) => [
-                      styles.skipButton,
-                      {
-                        borderColor,
-                        borderWidth: buttonMode === 'next' ? 0 : 1,
-                        backgroundColor:
-                          buttonMode === 'next' ? brandColor : 'transparent',
-                        opacity:
-                          !currentQuestion || loadingQuestion
-                            ? 0.4
-                            : pressed
-                              ? 0.7
-                              : 1,
-                      },
-                    ]}>
-                    <ThemedText
-                      type="defaultSemiBold"
-                      style={[
-                        styles.skipLabel,
-                        { color: buttonMode === 'next' ? '#fff' : skipTextColor },
-                      ]}>
-                      {buttonMode === 'next'
-                        ? 'Next'
-                        : buttonMode === 'show-answer'
-                          ? 'Show Answer'
-                          : 'Skip'}
-                    </ThemedText>
-                  </Pressable>
-                </View>
-              ) : null}
-              <View style={[styles.answerSection, { minHeight: answerSectionHeight }]}>
-                {isAnswering ? (
-                  <AnswerInput
-                    value={answer}
-                    onChangeText={setAnswer}
-                    onSubmit={handleSubmit}
-                    disabled={
-                      !currentQuestion ||
-                      loadingQuestion ||
-                      controlsDisabled
-                    }
-                    autoFocus={hasBuzzed && !lastResult}
-                  />
-                ) : (
-                  <View style={styles.answerPlaceholder} pointerEvents="none" />
-                )}
-              </View>
-              {lastResult?.directedPrompt ? (
-                <ThemedText style={styles.prompt}>
-                  Directed prompt: {lastResult.directedPrompt}
-                </ThemedText>
-              ) : null}
-              {error ? (
-                <Pressable onPress={handleRetry}>
-                  <ThemedText style={styles.error}>
-                    {error} Tap to try again.
-                  </ThemedText>
-                </Pressable>
-              ) : null}
-            </View>
+      <ThemedView style={styles.container}>
+        {/* Main content - always static */}
+        <View style={[styles.content, { paddingBottom: contentPaddingBottom }]}>
+          {/* Header */}
+          <View style={styles.header}>
+            <ThemedText type="title">QuizBowl Practice</ThemedText>
+            <ThemedText style={styles.subtitle}>
+              Powered by QBReader — fresh tossups every time you buzz.
+            </ThemedText>
           </View>
-        </ThemedView>
-      </KeyboardAvoidingView>
+
+          {/* Question Card */}
+          <View style={styles.questionWrapper}>
+            <QuestionCard
+              tossup={currentQuestion}
+              isLoading={loadingQuestion}
+              error={error}
+              showAnswer={Boolean(lastResult)}
+              isBuzzed={hasBuzzed}
+              result={lastResult}
+              revealActive={playState === 'active'}
+              onFullQuestionRevealChange={setHasFullyRevealedQuestion}
+            />
+
+            {/* Play/Pause overlay */}
+            {showPlayOverlay && (
+              <Pressable
+                onPress={handlePlayOverlayPress}
+                style={({ pressed }) => [
+                  styles.playOverlay,
+                  { backgroundColor: overlayBackground, opacity: pressed ? 0.9 : 1 },
+                ]}>
+                <ThemedText type="defaultSemiBold" style={[styles.playOverlayLabel, { color: overlayTextColor }]}>
+                  {playState === 'paused' ? 'Tap to Continue' : 'Tap to Play'}
+                </ThemedText>
+              </Pressable>
+            )}
+          </View>
+
+          {/* Action buttons - always visible */}
+          <View style={styles.actions}>
+            <Pressable
+              onPress={handleBuzz}
+              disabled={!currentQuestion || loadingQuestion || hasBuzzed || Boolean(lastResult) || controlsDisabled}
+              style={({ pressed }) => [
+                styles.buzzButton,
+                {
+                  backgroundColor: dangerColor,
+                  opacity: !currentQuestion || loadingQuestion ? 0.25 : hasBuzzed || lastResult ? 0.6 : pressed ? 0.9 : 1,
+                },
+              ]}>
+              <ThemedText type="defaultSemiBold" style={styles.actionLabel}>Buzz</ThemedText>
+            </Pressable>
+
+            <Pressable
+              onPress={handlePrimaryAction}
+              disabled={!currentQuestion || loadingQuestion || controlsDisabled}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                {
+                  borderColor,
+                  borderWidth: buttonMode === 'next' ? 0 : 1,
+                  backgroundColor: buttonMode === 'next' ? brandColor : 'transparent',
+                  opacity: !currentQuestion || loadingQuestion ? 0.4 : pressed ? 0.7 : 1,
+                },
+              ]}>
+              <ThemedText
+                type="defaultSemiBold"
+                style={[styles.secondaryLabel, { color: buttonMode === 'next' ? '#fff' : skipTextColor }]}>
+                {buttonMode === 'next' ? 'Next' : buttonMode === 'show-answer' ? 'Show Answer' : 'Skip'}
+              </ThemedText>
+            </Pressable>
+          </View>
+
+          {/* Extra info */}
+          {lastResult?.directedPrompt && (
+            <ThemedText style={styles.prompt}>Directed prompt: {lastResult.directedPrompt}</ThemedText>
+          )}
+          {error && (
+            <Pressable onPress={handleRetry}>
+              <ThemedText style={styles.error}>{error} Tap to try again.</ThemedText>
+            </Pressable>
+          )}
+        </View>
+
+        {/* Answer overlay - appears on top when buzzing */}
+        {isAnswering && (
+          <BlurView intensity={80} tint={colorScheme === 'dark' ? 'dark' : 'light'} style={styles.answerOverlay}>
+            <Pressable style={styles.answerOverlayTouchable} onPress={Keyboard.dismiss}>
+              <View style={styles.answerContainer}>
+                <ThemedText type="subtitle" style={styles.answerTitle}>Your Answer</ThemedText>
+                <AnswerInput
+                  value={answer}
+                  onChangeText={setAnswer}
+                  onSubmit={handleSubmit}
+                  disabled={!currentQuestion || loadingQuestion}
+                  autoFocus
+                />
+                <ThemedText style={styles.answerHint}>Press return to submit</ThemedText>
+              </View>
+            </Pressable>
+          </BlurView>
+        )}
+      </ThemedView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
-    flex: 1,
-  },
-  flex: {
     flex: 1,
   },
   container: {
@@ -394,17 +301,10 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.lg,
   },
-  mainSection: {
-    gap: spacing.lg,
-    flex: 1,
-  },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    gap: spacing.xs,
   },
   subtitle: {
-    marginTop: spacing.xs,
     opacity: 0.8,
   },
   questionWrapper: {
@@ -413,27 +313,20 @@ const styles = StyleSheet.create({
     borderRadius: scale(24),
     overflow: 'hidden',
   },
-  questionOverlay: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
+  playOverlay: {
+    ...StyleSheet.absoluteFillObject,
     borderRadius: scale(24),
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.lg,
   },
-  overlayLabel: {
+  playOverlayLabel: {
     fontSize: responsiveFont(18),
     letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
   actions: {
     flexDirection: 'row',
-    gap: spacing.md,
-  },
-  footerSection: {
     gap: spacing.md,
   },
   buzzButton: {
@@ -444,27 +337,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: MIN_TOUCH_TARGET,
   },
-  skipButton: {
+  secondaryButton: {
     flex: 1,
     borderRadius: scale(14),
     paddingVertical: verticalScale(16),
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: scale(1),
     minHeight: MIN_TOUCH_TARGET,
   },
   actionLabel: {
     color: '#fff',
     letterSpacing: 0.6,
   },
-  skipLabel: {
+  secondaryLabel: {
     letterSpacing: 0.6,
-  },
-  answerSection: {
-    marginTop: -spacing.xs,
-  },
-  answerPlaceholder: {
-    flex: 1,
   },
   prompt: {
     fontStyle: 'italic',
@@ -472,5 +358,29 @@ const styles = StyleSheet.create({
   error: {
     color: '#E45858',
     fontWeight: '600',
+  },
+  // Answer overlay styles
+  answerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  answerOverlayTouchable: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  answerContainer: {
+    width: '100%',
+    maxWidth: 400,
+    gap: spacing.md,
+  },
+  answerTitle: {
+    textAlign: 'center',
+    fontSize: responsiveFont(20),
+  },
+  answerHint: {
+    textAlign: 'center',
+    opacity: 0.6,
+    fontSize: responsiveFont(14),
   },
 });
