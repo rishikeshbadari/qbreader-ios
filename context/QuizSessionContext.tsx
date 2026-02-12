@@ -14,6 +14,8 @@ import { fetchRandomTossup } from '@/services/qbreader';
 import { useSettings } from '@/hooks/useSettings';
 import type { AnswerResult, SessionHistoryEntry, Tossup } from '@/types/qb';
 
+const MAX_HISTORY_ENTRIES = 200;
+
 interface QuizSessionContextValue {
   currentQuestion?: Tossup;
   loadingQuestion: boolean;
@@ -81,11 +83,12 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
         if (needed <= 0) {
           return;
         }
-        const incoming: Tossup[] = [];
-        for (let i = 0; i < needed; i += 1) {
-          const tossup = await fetchRandomTossup(prefetchController.signal, buildFilters());
-          incoming.push(tossup);
-        }
+        const filters = buildFilters();
+        const incoming = await Promise.all(
+          Array.from({ length: needed }, () =>
+            fetchRandomTossup(prefetchController.signal, filters)
+          )
+        );
         setNextQuestions((prev) => [...prev, ...incoming]);
       } catch (err) {
         if ((err as Error).name === 'AbortError') {
@@ -178,16 +181,19 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
       }
 
       setLastResult(result);
-      setHistory((prev) => [
-        {
-          id: `${currentQuestion.id}-${Date.now()}`,
-          tossup: currentQuestion,
-          userAnswer: sanitizedAnswer,
-          result,
-          timestamp: Date.now(),
-        },
-        ...prev,
-      ]);
+      setHistory((prev) => {
+        const next = [
+          {
+            id: `${currentQuestion.id}-${Date.now()}`,
+            tossup: currentQuestion,
+            userAnswer: sanitizedAnswer,
+            result,
+            timestamp: Date.now(),
+          },
+          ...prev,
+        ];
+        return next.length > MAX_HISTORY_ENTRIES ? next.slice(0, MAX_HISTORY_ENTRIES) : next;
+      });
     },
     [currentQuestion]
   );
@@ -201,16 +207,19 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     }
 
     const timestamp = Date.now();
-    setHistory((prev) => [
-      {
-        id: `${currentQuestion.id}-${timestamp}-skip`,
-        tossup: currentQuestion,
-        userAnswer: '',
-        result: { directive: 'skip' },
-        timestamp,
-      },
-      ...prev,
-    ]);
+    setHistory((prev) => {
+      const next = [
+        {
+          id: `${currentQuestion.id}-${timestamp}-skip`,
+          tossup: currentQuestion,
+          userAnswer: '',
+          result: { directive: 'skip' },
+          timestamp,
+        },
+        ...prev,
+      ];
+      return next.length > MAX_HISTORY_ENTRIES ? next.slice(0, MAX_HISTORY_ENTRIES) : next;
+    });
   }, [currentQuestion]);
 
   const value = useMemo(

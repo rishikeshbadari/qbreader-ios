@@ -177,23 +177,33 @@ export function SettingsProvider({ children }: PropsWithChildren) {
     void loadOptions();
   }, [loadOptions, storageReady]);
 
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (!storageReady) {
       return;
     }
-    const payload = JSON.stringify({
-      difficulties: selectedDifficulties,
-      categories: selectedCategories,
-      revealSpeed,
-    });
     persistedSelectionsRef.current = {
       difficulties: selectedDifficulties,
       categories: selectedCategories,
       revealSpeed,
     };
-    AsyncStorage.setItem(SETTINGS_STORAGE_KEY, payload).catch((error) =>
-      console.error('Failed to persist settings', error)
-    );
+
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+    }
+    persistTimerRef.current = setTimeout(() => {
+      const payload = JSON.stringify(persistedSelectionsRef.current);
+      AsyncStorage.setItem(SETTINGS_STORAGE_KEY, payload).catch((error) =>
+        console.error('Failed to persist settings', error)
+      );
+    }, 500);
+
+    return () => {
+      if (persistTimerRef.current) {
+        clearTimeout(persistTimerRef.current);
+      }
+    };
   }, [revealSpeed, selectedCategories, selectedDifficulties, storageReady]);
 
   const toggleDifficulty = useCallback(

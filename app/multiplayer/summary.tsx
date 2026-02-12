@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -7,7 +8,73 @@ import { ThemedView } from '@/components/ThemedView';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useThemeColor } from '@/hooks/useThemeColor';
+import { SCORING, type GameSummary } from '@/types/multiplayer';
+import type { AnswerResult } from '@/types/qb';
+import { normalizeDirective } from '@/utils/directives';
 import { responsiveFont, scale, spacing, verticalScale, MIN_TOUCH_TARGET } from '@/utils/responsive';
+
+type PlayerScore = {
+  id: string;
+  name: string;
+  status: 'active' | 'left';
+  correct: number;
+  incorrect: number;
+  powers: number;
+  points: number;
+  accuracy: number;
+};
+
+function computeScores(summary: GameSummary): PlayerScore[] {
+  const scores = new Map<string, { correct: number; incorrect: number; powers: number; points: number }>();
+  for (const player of summary.players) {
+    scores.set(player.id, { correct: 0, incorrect: 0, powers: 0, points: 0 });
+  }
+  for (const record of summary.questions) {
+    for (const buzz of record.buzzes) {
+      const entry = scores.get(buzz.playerId);
+      if (!entry) continue;
+      const directive = normalizeDirective(buzz.result);
+      if (directive === 'accept') {
+        entry.correct += 1;
+        if (buzz.isPower) {
+          entry.powers += 1;
+          entry.points += SCORING.POWER;
+        } else {
+          entry.points += SCORING.CORRECT;
+        }
+      } else if (directive === 'incorrect') {
+        entry.incorrect += 1;
+        entry.points += SCORING.INCORRECT;
+      }
+    }
+  }
+  return summary.players
+    .map((p) => {
+      const s = scores.get(p.id)!;
+      const total = s.correct + s.incorrect;
+      return {
+        id: p.id,
+        name: p.name,
+        status: (p.status ?? 'active') as 'active' | 'left',
+        ...s,
+        accuracy: total > 0 ? s.correct / total : 0,
+      };
+    })
+    .sort((a, b) => b.points - a.points);
+}
+
+function buzzPointDelta(buzz: { result?: AnswerResult; isPower?: boolean }): number {
+  const directive = normalizeDirective(buzz.result);
+  if (directive === 'accept') return buzz.isPower ? SCORING.POWER : SCORING.CORRECT;
+  if (directive === 'incorrect') return SCORING.INCORRECT;
+  return 0;
+}
+
+function buzzLabel(buzz: { isPower?: boolean; timedOut?: boolean }): string | null {
+  if (buzz.isPower) return 'POWER';
+  if (buzz.timedOut) return 'TIMEOUT';
+  return null;
+}
 
 export default function MultiplayerSummaryScreen() {
   const colorScheme = useColorScheme();
@@ -41,14 +108,51 @@ export default function MultiplayerSummaryScreen() {
   }
 
   const playerNames = summary.players.map(p => p.name).join(', ');
+  const scores = useMemo(() => computeScores(summary), [summary]);
 
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
       <View style={styles.header}>
+        <Pressable
+          onPress={handleDone}
+          accessibilityRole="button"
+          accessibilityLabel="Back to multiplayer"
+          style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.6 : 1 }]}>
+          <ThemedText style={styles.backLabel}>‹ Back</ThemedText>
+        </Pressable>
         <ThemedText type="title">Game Summary</ThemedText>
         <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
           Players: {playerNames}
         </ThemedText>
+      </View>
+
+      {/* Scoreboard */}
+      <View style={[styles.scoreboard, { borderColor }]}>
+        {scores.map((score, idx) => (
+          <View key={score.id} style={styles.scoreRow}>
+            <View style={styles.scoreRank}>
+              <ThemedText type="defaultSemiBold" style={styles.scoreRankText}>
+                {idx + 1}
+              </ThemedText>
+            </View>
+            <View style={styles.scoreInfo}>
+              <View style={styles.nameRow}>
+                <ThemedText type="defaultSemiBold">{score.name}</ThemedText>
+                {score.status === 'left' ? (
+                  <ThemedText style={[styles.leftBadge, { color: mutedColor }]}>(left)</ThemedText>
+                ) : null}
+              </View>
+              <ThemedText style={[styles.scoreDetail, { color: mutedColor }]}>
+                {score.correct} correct{score.powers > 0 ? ` (${score.powers} powers)` : ''} · {score.incorrect} wrong · {Math.round(score.accuracy * 100)}%
+              </ThemedText>
+            </View>
+            <ThemedText
+              type="defaultSemiBold"
+              style={[styles.scoreValue, { color: score.points >= 0 ? successColor : errorColor }]}>
+              {score.points}
+            </ThemedText>
+          </View>
+        ))}
       </View>
 
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
@@ -79,17 +183,30 @@ export default function MultiplayerSummaryScreen() {
                 <View style={styles.buzzes}>
                   {record.buzzes.map((buzz, buzzIdx) => {
                     const player = summary.players.find(p => p.id === buzz.playerId);
-                    const isCorrect = buzz.result?.directive === 'accept';
+                    const directive = normalizeDirective(buzz.result);
+                    const isCorrect = directive === 'accept';
+                    const delta = buzzPointDelta(buzz);
+                    const label = buzzLabel(buzz);
                     return (
                       <View key={buzzIdx} style={styles.buzzRow}>
                         <ThemedText style={{ color: textColor }}>
                           {player?.name ?? 'Unknown'}:
                         </ThemedText>
                         <ThemedText style={{ color: isCorrect ? successColor : errorColor }}>
-                          {buzz.result?.directive ?? 'pending'}
+                          {directive ?? 'pending'}
                         </ThemedText>
+                        {label ? (
+                          <ThemedText style={[styles.buzzLabel, { color: isCorrect ? successColor : errorColor }]}>
+                            {label}
+                          </ThemedText>
+                        ) : null}
+                        {delta !== 0 ? (
+                          <ThemedText style={[styles.buzzDelta, { color: delta > 0 ? successColor : errorColor }]}>
+                            {delta > 0 ? `+${delta}` : `${delta}`}
+                          </ThemedText>
+                        ) : null}
                         <ThemedText style={[styles.buzzAnswer, { color: mutedColor }]}>
-                          "{buzz.answer}"
+                          "{buzz.answer || '(no answer)'}"
                         </ThemedText>
                       </View>
                     );
@@ -122,8 +239,52 @@ const styles = StyleSheet.create({
   header: {
     gap: spacing.xs,
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: verticalScale(4),
+  },
+  backLabel: {
+    fontSize: responsiveFont(16),
+  },
   subtitle: {
     fontSize: responsiveFont(14),
+  },
+  scoreboard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(16),
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  scoreRank: {
+    width: scale(24),
+    alignItems: 'center',
+  },
+  scoreRankText: {
+    fontSize: responsiveFont(14),
+  },
+  scoreInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  leftBadge: {
+    fontSize: responsiveFont(11),
+    fontStyle: 'italic',
+  },
+  scoreDetail: {
+    fontSize: responsiveFont(12),
+  },
+  scoreValue: {
+    fontSize: responsiveFont(20),
   },
   list: {
     flex: 1,
@@ -170,6 +331,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.xs,
     flexWrap: 'wrap',
+  },
+  buzzLabel: {
+    fontSize: responsiveFont(11),
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  buzzDelta: {
+    fontSize: responsiveFont(12),
+    fontWeight: '600',
   },
   buzzAnswer: {
     fontSize: responsiveFont(13),

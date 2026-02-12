@@ -1,4 +1,4 @@
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -41,6 +41,7 @@ export default function SettingsScreen() {
   const brandColor = useThemeColor({}, 'brand');
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
+  const errorColor = useThemeColor({}, 'error');
 
   const revealSpeedLabel =
     revealSpeed >= 0.95
@@ -103,7 +104,11 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
-      <View style={[styles.content, { paddingBottom: tabBarHeight }]}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + spacing.lg }]}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
         <View style={styles.header}>
           <ThemedText type="title">Settings</ThemedText>
@@ -135,7 +140,7 @@ export default function SettingsScreen() {
 
         {loadError ? (
           <ThemedView style={[styles.section, styles.errorCard, { borderColor }]}>
-            <ThemedText type="defaultSemiBold" style={styles.errorText}>
+            <ThemedText type="defaultSemiBold" style={[styles.errorText, { color: errorColor }]}>
               {loadError}
             </ThemedText>
             <Pressable onPress={refreshOptions} style={[styles.refreshButton, { borderColor }]}>
@@ -160,12 +165,12 @@ export default function SettingsScreen() {
             <View style={styles.chipGrid}>{renderDifficultyChips()}</View>
           )}
           {selectionErrors.difficulty ? (
-            <ThemedText style={styles.errorMessage}>{selectionErrors.difficulty}</ThemedText>
+            <ThemedText style={[styles.errorMessage, { color: errorColor }]}>{selectionErrors.difficulty}</ThemedText>
           ) : null}
         </ThemedView>
 
         {/* Categories */}
-        <ThemedView style={[styles.section, styles.categoriesSection]}>
+        <ThemedView style={styles.section}>
           <View style={styles.sectionHeader}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>Categories</ThemedText>
             <Pressable onPress={selectAllCategories} hitSlop={8}>
@@ -180,7 +185,7 @@ export default function SettingsScreen() {
             <View style={styles.chipGrid}>{renderCategoryChips()}</View>
           )}
           {selectionErrors.category ? (
-            <ThemedText style={styles.errorMessage}>{selectionErrors.category}</ThemedText>
+            <ThemedText style={[styles.errorMessage, { color: errorColor }]}>{selectionErrors.category}</ThemedText>
           ) : null}
         </ThemedView>
 
@@ -190,7 +195,7 @@ export default function SettingsScreen() {
             <ThemedText style={styles.loadingLabel}>Refreshing…</ThemedText>
           </View>
         ) : null}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -199,8 +204,10 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  content: {
+  scrollView: {
     flex: 1,
+  },
+  content: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     gap: dynamicGap,
@@ -216,9 +223,6 @@ const styles = StyleSheet.create({
     borderRadius: scale(16),
     padding: sectionPadding,
     gap: spacing.sm,
-  },
-  categoriesSection: {
-    flex: 1,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -266,11 +270,9 @@ const styles = StyleSheet.create({
     borderWidth: scale(1),
   },
   errorText: {
-    color: '#DC2626',
     fontSize: responsiveFont(14),
   },
   errorMessage: {
-    color: '#DC2626',
     fontSize: responsiveFont(13),
   },
   refreshButton: {

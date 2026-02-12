@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ThemedText';
@@ -25,6 +25,7 @@ export default function JoinGameScreen() {
   const brandColor = useThemeColor({}, 'brand');
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
+  const errorColor = useThemeColor({}, 'error');
 
   const handleJoin = async () => {
     if (isJoining || !code.trim()) return;
@@ -43,8 +44,19 @@ export default function JoinGameScreen() {
   };
 
   return (
+    <KeyboardAvoidingView
+      style={styles.keyboardAvoid}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
     <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
       <View style={styles.header}>
+        <Pressable
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.6 : 1 }]}>
+          <ThemedText style={styles.backLabel}>‹ Back</ThemedText>
+        </Pressable>
         <ThemedText type="title">Join a Game</ThemedText>
         <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
           Enter the game code shared by the host.
@@ -74,7 +86,7 @@ export default function JoinGameScreen() {
         />
       </View>
 
-      {error && <ThemedText style={styles.error}>{error}</ThemedText>}
+      {error && <ThemedText style={[styles.error, { color: errorColor }]}>{error}</ThemedText>}
 
       <Pressable
         onPress={handleJoin}
@@ -88,10 +100,14 @@ export default function JoinGameScreen() {
         </ThemedText>
       </Pressable>
     </ThemedView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardAvoid: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     padding: spacing.lg,
@@ -99,6 +115,13 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: spacing.xs,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: verticalScale(4),
+  },
+  backLabel: {
+    fontSize: responsiveFont(16),
   },
   subtitle: {
     fontSize: responsiveFont(14),
@@ -129,7 +152,6 @@ const styles = StyleSheet.create({
     fontSize: responsiveFont(16),
   },
   error: {
-    color: '#DC2626',
     fontSize: responsiveFont(14),
   },
 });

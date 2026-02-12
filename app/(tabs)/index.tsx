@@ -48,10 +48,12 @@ export default function PlayScreen() {
   // Show overlay when:
   // - idle (user hasn't started yet)
   // - paused with a current question (user navigated away mid-question)
+  // - paused but question was cleared (settings changed while paused)
   // - active but no question loaded yet (waiting for first question)
   const showPlayOverlay =
     playState === 'idle' ||
     (playState === 'paused' && currentQuestion && !lastResult) ||
+    (playState === 'paused' && !currentQuestion) ||
     (playState === 'active' && !currentQuestion && !loadingQuestion && !error);
 
   const handlePlayOverlayPress = () => {
@@ -61,6 +63,10 @@ export default function PlayScreen() {
       void loadNextQuestion();
     } else if (playState === 'paused') {
       setPlayState('active');
+      if (!currentQuestion) {
+        clearError();
+        void loadNextQuestion();
+      }
     } else if (playState === 'active' && !currentQuestion) {
       // Edge case: active but no question loaded - try again
       clearError();
@@ -106,6 +112,7 @@ export default function PlayScreen() {
         onNext={handleNext}
         onRetry={handleRetry}
         bottomPadding={tabBarHeight}
+        parentHandlesBottomSafeArea
         overlay={
           showPlayOverlay ? (
             <Pressable

@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ThemedText';
@@ -28,6 +28,7 @@ export default function HostGameScreen() {
   const brandColor = useThemeColor({}, 'brand');
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
+  const errorColor = useThemeColor({}, 'error');
 
   // Initialize selections when options load
   const allDifficulties = useMemo(() => availableDifficulties.flatMap(d => d.values), [availableDifficulties]);
@@ -85,9 +86,20 @@ export default function HostGameScreen() {
   };
 
   return (
+    <KeyboardAvoidingView
+      style={styles.keyboardAvoid}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
     <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
+          <Pressable
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.6 : 1 }]}>
+            <ThemedText style={styles.backLabel}>‹ Back</ThemedText>
+          </Pressable>
           <ThemedText type="title">Start a Game</ThemedText>
           <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
             Choose settings for this game session.
@@ -164,7 +176,7 @@ export default function HostGameScreen() {
           )}
         </View>
 
-        {error && <ThemedText style={styles.error}>{error}</ThemedText>}
+        {error && <ThemedText style={[styles.error, { color: errorColor }]}>{error}</ThemedText>}
       </ScrollView>
 
       {/* Start button */}
@@ -180,10 +192,14 @@ export default function HostGameScreen() {
         </ThemedText>
       </Pressable>
     </ThemedView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardAvoid: {
+    flex: 1,
+  },
   container: {
     flex: 1,
   },
@@ -194,6 +210,13 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: spacing.xs,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: verticalScale(4),
+  },
+  backLabel: {
+    fontSize: responsiveFont(16),
   },
   subtitle: {
     fontSize: responsiveFont(14),
@@ -247,7 +270,6 @@ const styles = StyleSheet.create({
     fontSize: responsiveFont(16),
   },
   error: {
-    color: '#DC2626',
     fontSize: responsiveFont(14),
   },
 });

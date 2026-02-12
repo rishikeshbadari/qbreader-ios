@@ -7,6 +7,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AnswerInput } from '@/components/quiz/AnswerInput';
@@ -21,7 +22,7 @@ import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from 
 type Props = {
   // Header
   title: string;
-  subtitle: string;
+  subtitle: React.ReactNode;
   headerRight?: React.ReactNode;
 
   // Question state
@@ -38,7 +39,7 @@ type Props = {
 
   // Callbacks
   onBuzz: () => void;
-  onSubmitAnswer: (answer: string) => Promise<void> | void;
+  onSubmitAnswer: (answer: string, wordIndex?: number) => Promise<void> | void;
   onNext: () => void;
   onRetry?: () => void;
 
@@ -47,6 +48,12 @@ type Props = {
 
   // Bottom padding (for tab bar)
   bottomPadding?: number;
+
+  // Set to true if parent component handles bottom safe area (e.g., wrapped in SafeAreaView)
+  parentHandlesBottomSafeArea?: boolean;
+
+  // Buzz timer (multiplayer) — epoch ms when timer expires
+  buzzTimerEnd?: number | null;
 };
 
 export function QuizGameLayout({
@@ -67,10 +74,13 @@ export function QuizGameLayout({
   onRetry,
   overlay,
   bottomPadding = 0,
+  parentHandlesBottomSafeArea = false,
+  buzzTimerEnd,
 }: Props) {
   const [answer, setAnswer] = useState('');
   const [hasBuzzed, setHasBuzzed] = useState(false);
   const keyboardAnimatedValue = useRef(new Animated.Value(0)).current;
+  const wordIndexRef = useRef(0);
 
   const colorScheme = useColorScheme();
   const insets = useSafeAreaInsets();
@@ -82,23 +92,43 @@ export function QuizGameLayout({
   stateRef.current = { isPlaying, hasBuzzed, result, answer };
   const submittedRef = useRef(false);
 
+  // Buzz timer countdown
+  const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!buzzTimerEnd) {
+      setTimerSeconds(null);
+      return;
+    }
+
+    const updateTimer = () => {
+      const remaining = Math.max(0, Math.ceil((buzzTimerEnd - Date.now()) / 1000));
+      setTimerSeconds(remaining);
+      if (remaining <= 0) {
+        setTimerSeconds(null);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 100);
+    return () => clearInterval(interval);
+  }, [buzzTimerEnd]);
+
   // Track keyboard height
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
     const showSub = Keyboard.addListener(showEvent, (e) => {
-      keyboardAnimatedValue.setValue(e.endCoordinates.height);
+      // If parent handles bottom safe area, subtract it from keyboard height
+      // since the overlay's bottom is already inset by the safe area
+      const adjustedHeight = parentHandlesBottomSafeArea
+        ? Math.max(0, e.endCoordinates.height - insets.bottom)
+        : e.endCoordinates.height;
+      keyboardAnimatedValue.setValue(adjustedHeight);
     });
 
     const hideSub = Keyboard.addListener(hideEvent, () => {
-      // Auto-submit empty answer when keyboard hides
-      const { isPlaying, hasBuzzed, result, answer } = stateRef.current;
-      if (isPlaying && hasBuzzed && !result && !submittedRef.current && answer.trim().length === 0) {
-        submittedRef.current = true;
-        void onSubmitAnswer('');
-      }
-      
       keyboardAnimatedValue.setValue(0);
     });
 
@@ -106,13 +136,14 @@ export function QuizGameLayout({
       showSub.remove();
       hideSub.remove();
     };
-  }, [onSubmitAnswer, keyboardAnimatedValue]);
+  }, [onSubmitAnswer, keyboardAnimatedValue, parentHandlesBottomSafeArea, insets.bottom]);
 
   // Reset on new question
   useEffect(() => {
     setAnswer('');
     setHasBuzzed(false);
     submittedRef.current = false;
+    wordIndexRef.current = 0;
   }, [question?.id]);
 
   // Reset submitted flag when buzz state changes
@@ -126,6 +157,10 @@ export function QuizGameLayout({
   const showNextButton = showResult;
 
   // Handlers
+  const handleWordIndexChange = (index: number) => {
+    wordIndexRef.current = index;
+  };
+
   const handleBuzz = () => {
     if (!question || isLoading || hasBuzzed || !isPlaying || isBuzzLocked) return;
     setHasBuzzed(true);
@@ -135,7 +170,7 @@ export function QuizGameLayout({
   const handleSubmit = async () => {
     if (!isPlaying || !hasBuzzed || result) return;
     submittedRef.current = true;
-    await onSubmitAnswer(answer.trim());
+    await onSubmitAnswer(answer.trim(), wordIndexRef.current);
     setAnswer('');
     setHasBuzzed(false);
   };
@@ -144,11 +179,13 @@ export function QuizGameLayout({
     Keyboard.dismiss();
     if (showNextButton) {
       // Go to next question
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setAnswer('');
       setHasBuzzed(false);
       onNext();
     } else {
       // Buzz
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       handleBuzz();
     }
   };
@@ -163,7 +200,9 @@ export function QuizGameLayout({
           <View style={styles.header}>
             <View style={styles.headerText}>
               <ThemedText type="title">{title}</ThemedText>
-              <ThemedText style={styles.subtitle}>{subtitle}</ThemedText>
+              {typeof subtitle === 'string' ? (
+                <ThemedText style={styles.subtitle}>{subtitle}</ThemedText>
+              ) : subtitle}
             </View>
             {headerRight}
           </View>
@@ -180,6 +219,7 @@ export function QuizGameLayout({
               revealActive={isPlaying && !isBuzzLocked}
               revealSpeedOverride={revealSpeed}
               showRevealButton={false}
+              onWordIndexChange={handleWordIndexChange}
             />
             {overlay}
             {/* Show buzzer name when someone else is buzzing */}
@@ -188,6 +228,11 @@ export function QuizGameLayout({
                 <ThemedText type="defaultSemiBold" style={styles.buzzerText}>
                   {buzzerName} buzzed in...
                 </ThemedText>
+                {timerSeconds != null && timerSeconds > 0 && (
+                  <ThemedText style={[styles.timerText, { color: timerSeconds <= 3 ? dangerColor : brandColor }]}>
+                    {timerSeconds}s remaining
+                  </ThemedText>
+                )}
               </View>
             )}
           </View>
@@ -214,7 +259,7 @@ export function QuizGameLayout({
           )}
           {error && onRetry && (
             <Pressable onPress={onRetry}>
-              <ThemedText style={styles.error}>{error} Tap to try again.</ThemedText>
+              <ThemedText style={[styles.error, { color: dangerColor }]}>{error} Tap to try again.</ThemedText>
             </Pressable>
           )}
         </View>
@@ -229,6 +274,17 @@ export function QuizGameLayout({
           ]}>
           <Pressable style={styles.answerOverlayTouchable} onPress={Keyboard.dismiss} />
           <Animated.View style={[styles.answerInputContainer, { marginBottom: keyboardAnimatedValue }]}>
+            {/* Timer display */}
+            {timerSeconds != null && timerSeconds > 0 && (
+              <View style={styles.timerContainer}>
+                <ThemedText type="defaultSemiBold" style={[
+                  styles.timerCountdown,
+                  { color: timerSeconds <= 3 ? dangerColor : brandColor },
+                ]}>
+                  {timerSeconds}s
+                </ThemedText>
+              </View>
+            )}
             <AnswerInput
               value={answer}
               onChangeText={setAnswer}
@@ -236,6 +292,18 @@ export function QuizGameLayout({
               disabled={!question || isLoading}
               autoFocus
             />
+            <View style={styles.submitRow}>
+              <Pressable
+                onPress={handleSubmit}
+                accessibilityRole="button"
+                accessibilityLabel="Submit answer"
+                style={({ pressed }) => [
+                  styles.submitButton,
+                  { backgroundColor: brandColor, opacity: pressed ? 0.8 : 1 },
+                ]}>
+                <ThemedText type="defaultSemiBold" style={styles.submitLabel}>Submit</ThemedText>
+              </Pressable>
+            </View>
           </Animated.View>
         </View>
       )}
@@ -290,7 +358,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   error: {
-    color: '#E45858',
     fontWeight: '600',
   },
   answerOverlay: {
@@ -304,17 +371,44 @@ const styles = StyleSheet.create({
   answerInputContainer: {
     width: '100%',
   },
+  timerContainer: {
+    alignItems: 'center',
+    paddingBottom: spacing.sm,
+  },
+  timerCountdown: {
+    fontSize: responsiveFont(24),
+    letterSpacing: 1,
+  },
+  submitRow: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  submitButton: {
+    borderRadius: scale(12),
+    paddingVertical: verticalScale(12),
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: MIN_TOUCH_TARGET,
+  },
+  submitLabel: {
+    color: '#fff',
+    fontSize: responsiveFont(16),
+    letterSpacing: 0.4,
+  },
   buzzerOverlay: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: scale(24),
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.lg,
+    gap: spacing.sm,
   },
   buzzerText: {
     fontSize: responsiveFont(18),
     letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
+  timerText: {
+    fontSize: responsiveFont(16),
+  },
 });
-

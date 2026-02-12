@@ -2,7 +2,6 @@ import { stripHtmlTags } from '@/utils/text';
 import type { Tossup } from '@/types/qb';
 
 const API_BASE = 'https://www.qbreader.org/api';
-const CATEGORY_SAMPLE_SIZE = 800;
 const DEFAULT_TOSSUP_COUNT = 1;
 const FALLBACK_CATEGORIES = [
   'Literature',
@@ -60,19 +59,6 @@ interface RawTossup {
 interface RandomTossupResponse {
   tossups?: RawTossup[];
   response_time?: number;
-}
-
-interface QueryResponse {
-  tossups?: {
-    questionArray: RawTossup[];
-  };
-  bonuses?: {
-    questionArray: Array<
-      RawTossup & {
-        alternate_subcategory?: string | { name?: string };
-      }
-    >;
-  };
 }
 
 export type DifficultyOption = {
@@ -157,40 +143,25 @@ export async function fetchAvailableDifficulties(): Promise<DifficultyOption[]> 
 }
 
 /**
- * Fetch available categories from QBReader, falling back to static defaults when none exist.
+ * Return the well-known QBReader categories. These are stable and don't need
+ * an expensive network fetch (the previous implementation fetched 800 random
+ * questions just to extract category names).
  */
-export async function fetchAvailableCategories(): Promise<CategoryOption[]> {
-  const url = new URL(`${API_BASE}/query`);
-  url.searchParams.set('maxReturnLength', CATEGORY_SAMPLE_SIZE.toString());
-  url.searchParams.set('randomize', 'true');
-
-  const response = await fetch(url.toString());
-
-  if (!response.ok) {
-    throw new Error('Unable to load categories.');
-  }
-
-  const payload = (await response.json()) as QueryResponse;
-  const categories = collectCategories(payload);
-
-  return Array.from(categories)
-    .filter(Boolean)
+export function getAvailableCategories(): CategoryOption[] {
+  return [...FALLBACK_CATEGORIES]
     .sort((a, b) => a.localeCompare(b))
     .map((name) => ({ name }));
 }
 
 /**
- * Fetch both categories and difficulties in parallel.
+ * Fetch difficulties from the API and combine with the static category list.
  */
 export async function fetchFilterOptions(): Promise<{
   difficulties: DifficultyOption[];
   categories: CategoryOption[];
 }> {
-  const [difficulties, categories] = await Promise.all([
-    fetchAvailableDifficulties(),
-    fetchAvailableCategories(),
-  ]);
-
+  const difficulties = await fetchAvailableDifficulties();
+  const categories = getAvailableCategories();
   return { difficulties, categories };
 }
 
@@ -202,39 +173,6 @@ function collectDifficultyValues(data: Array<{ difficulty?: number }>): Set<numb
     }
   });
   return values;
-}
-
-function collectCategories(payload: QueryResponse): Set<string> {
-  const categories = new Set<string>();
-
-  const collectCategory = (value?: string | { name?: string }) => {
-    if (!value) {
-      return;
-    }
-
-    if (typeof value === 'string') {
-      categories.add(value);
-      return;
-    }
-
-    if (value.name) {
-      categories.add(value.name);
-    }
-  };
-
-  payload.tossups?.questionArray.forEach((question) => {
-    collectCategory(question.category);
-  });
-
-  payload.bonuses?.questionArray.forEach((question) => {
-    collectCategory(question.category);
-  });
-
-  if (categories.size === 0) {
-    FALLBACK_CATEGORIES.forEach((name) => categories.add(name));
-  }
-
-  return categories;
 }
 
 function extractTossups(payload: RandomTossupResponse | RawTossup[]): RawTossup[] {

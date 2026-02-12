@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import type { AnswerResult, Tossup } from '@/types/qb';
@@ -19,6 +20,7 @@ interface Props {
   result?: AnswerResult;
   revealActive?: boolean;
   onFullQuestionRevealChange?: (isRevealed: boolean) => void;
+  onWordIndexChange?: (wordIndex: number) => void;
   revealSpeedOverride?: number;
   showRevealButton?: boolean;
   showMeta?: boolean;
@@ -33,10 +35,12 @@ export function QuestionCard({
   result,
   revealActive = true,
   onFullQuestionRevealChange,
+  onWordIndexChange,
   revealSpeedOverride,
   showRevealButton = true,
   showMeta = true,
 }: Props) {
+  const colorScheme = useColorScheme();
   const { revealSpeed } = useSettings();
   const effectiveRevealSpeed =
     typeof revealSpeedOverride === 'number' ? revealSpeedOverride : revealSpeed;
@@ -47,7 +51,7 @@ export function QuestionCard({
   const errorColor = useThemeColor({}, 'error');
   const brandColor = useThemeColor({}, 'brand');
   const [displayedQuestion, setDisplayedQuestion] = useState('');
-  const animationTimeout = useRef<NodeJS.Timeout | null>(null);
+  const animationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const buzzedRef = useRef(isBuzzed);
   const questionScrollRef = useRef<ScrollView | null>(null);
   const [hasRevealedFullQuestion, setHasRevealedFullQuestion] = useState(false);
@@ -101,6 +105,7 @@ export function QuestionCard({
     if (showAnswer || hasRevealedFullQuestion || revealIntervalMs === 0) {
       revealIndexRef.current = words.length;
       setDisplayedQuestion(questionText);
+      onWordIndexChange?.(words.length);
       if ((showAnswer || revealIntervalMs === 0) && !hasRevealedFullQuestion) {
         setHasRevealedFullQuestion(true);
       }
@@ -110,6 +115,7 @@ export function QuestionCard({
     if (shouldAnimateQuestion && words.length > 0) {
       revealIndexRef.current = 1;
       setDisplayedQuestion(words[0]);
+      onWordIndexChange?.(1);
     } else {
       revealIndexRef.current = 0;
       setDisplayedQuestion('');
@@ -148,6 +154,7 @@ export function QuestionCard({
         previous.length > 0 ? `${previous} ${nextWord}` : nextWord
       );
       revealIndexRef.current += 1;
+      onWordIndexChange?.(revealIndexRef.current);
 
       if (revealIndexRef.current < wordsRef.current.length && !buzzedRef.current) {
         animationTimeout.current = setTimeout(revealNextWord, revealIntervalMs);
@@ -226,7 +233,7 @@ export function QuestionCard({
             <ThemedText style={{ color: mutedColor }}>Loading a tossup…</ThemedText>
           </View>
         ) : error ? (
-          <ThemedText type="defaultSemiBold" style={styles.error}>
+          <ThemedText type="defaultSemiBold" style={[styles.error, { color: errorColor }]}>
             {error}
           </ThemedText>
         ) : (
@@ -271,10 +278,12 @@ export function QuestionCard({
           <Pressable
             onPress={handleRevealFullQuestion}
             accessibilityRole="button"
+            accessibilityLabel="Show full question"
             style={({ pressed }) => [
               styles.revealButton,
               {
                 borderColor,
+                backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.05)',
                 opacity: pressed ? 0.6 : 1,
               },
             ]}>
@@ -365,9 +374,7 @@ const styles = StyleSheet.create({
   answerResult: {
     fontSize: responsiveFont(16),
   },
-  error: {
-    color: '#DC2626',
-  },
+  error: {},
   revealButton: {
     position: 'absolute',
     right: scale(10),
@@ -376,7 +383,6 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(6),
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(15, 23, 42, 0.05)',
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: 'center',
     alignItems: 'center',

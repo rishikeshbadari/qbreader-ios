@@ -10,6 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 
+import { ChipSelector } from '@/components/quiz/ChipSelector';
 import { QuizGameLayout } from '@/components/quiz/QuizGameLayout';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -27,6 +28,7 @@ export default function MultiplayerGameScreen() {
   const {
     sessionId,
     status,
+    players,
     settings,
     currentQuestion,
     currentResult,
@@ -34,11 +36,15 @@ export default function MultiplayerGameScreen() {
     isLoading,
     isBuzzLocked,
     isSelfLockedOut,
+    selfPlayer,
+    scores,
+    isHost,
+    buzzTimerEnd,
     startNextQuestion,
     submitAnswer,
     pauseGame,
     updateSettings,
-    endGame,
+    leaveGame,
   } = useMultiplayer();
 
   // Auto-navigate to summary when game ends (e.g., when another player leaves)
@@ -60,8 +66,11 @@ export default function MultiplayerGameScreen() {
   const brandColor = useThemeColor({}, 'brand');
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
+  const successColor = useThemeColor({}, 'success');
+  const errorColor = useThemeColor({}, 'error');
 
   const isPlaying = status === 'playing';
+  const selfScore = selfPlayer ? (scores[selfPlayer.id] ?? 0) : 0;
 
   const handleOpenSettings = async () => {
     await pauseGame();
@@ -72,7 +81,7 @@ export default function MultiplayerGameScreen() {
   };
 
   const handleApplySettings = async () => {
-    updateSettings({
+    await updateSettings({
       categories: tempCategories.length ? tempCategories : availableCategories.map(c => c.name),
       difficulties: tempDifficulties.length ? tempDifficulties : availableDifficulties.flatMap(d => d.values),
       revealSpeed: tempSpeed,
@@ -81,8 +90,8 @@ export default function MultiplayerGameScreen() {
     await startNextQuestion();
   };
 
-  const handleEndGame = async () => {
-    await endGame();
+  const handleLeave = async () => {
+    await leaveGame();
     router.replace('/multiplayer/summary');
   };
 
@@ -110,19 +119,32 @@ export default function MultiplayerGameScreen() {
   const overlayBackground = colorScheme === 'dark' ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.95)';
   const overlayTextColor = colorScheme === 'dark' ? '#fff' : '#0f172a';
 
-  const showOverlay = !isPlaying && status !== 'ended' && !currentQuestion;
+  const showPausedOverlay = status === 'paused' && !showSettings;
+  const showOverlay = (!isPlaying && status !== 'ended' && !currentQuestion) || showPausedOverlay;
 
   return (
     <ThemedView style={[styles.gameContainer, { paddingTop: insets.top }]}>
       <QuizGameLayout
         title="Multiplayer"
-        subtitle={sessionId ? `Game code: ${sessionId}` : 'Local multiplayer game'}
+        subtitle={
+          <View style={styles.subtitleRow}>
+            <ThemedText style={[styles.subtitleText, { color: mutedColor }]}>
+              {players.length} player{players.length !== 1 ? 's' : ''}
+            </ThemedText>
+            <ThemedText style={[styles.subtitleDot, { color: mutedColor }]}>·</ThemedText>
+            <ThemedText style={[styles.subtitleText, { color: selfScore >= 0 ? successColor : errorColor }]}>
+              {selfScore} pts
+            </ThemedText>
+          </View>
+        }
         headerRight={
           <View style={styles.headerButtons}>
-            <Pressable onPress={handleOpenSettings} style={[styles.headerButton, { borderColor }]}>
-              <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>Settings</ThemedText>
-            </Pressable>
-            <Pressable onPress={handleEndGame} style={[styles.headerButton, { borderColor }]}>
+            {isHost ? (
+              <Pressable onPress={handleOpenSettings} style={[styles.headerButton, { borderColor }]}>
+                <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>Settings</ThemedText>
+              </Pressable>
+            ) : null}
+            <Pressable onPress={handleLeave} style={[styles.headerButton, { borderColor }]}>
               <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>Leave</ThemedText>
             </Pressable>
           </View>
@@ -135,21 +157,30 @@ export default function MultiplayerGameScreen() {
         isPlaying={isPlaying}
         isBuzzLocked={isBuzzLocked || isSelfLockedOut}
         buzzerName={currentBuzzer?.name}
+        buzzTimerEnd={buzzTimerEnd}
         onBuzz={() => {}}
         onSubmitAnswer={submitAnswer}
         onNext={startNextQuestion}
         overlay={
           showOverlay ? (
-            <Pressable
-              onPress={startNextQuestion}
-              style={({ pressed }) => [
-                styles.overlay,
-                { backgroundColor: overlayBackground, opacity: pressed ? 0.9 : 1 },
-              ]}>
-              <ThemedText type="defaultSemiBold" style={[styles.overlayLabel, { color: overlayTextColor }]}>
-                {status === 'lobby' ? 'Tap to Start' : 'Tap to Play'}
-              </ThemedText>
-            </Pressable>
+            showPausedOverlay ? (
+              <View style={[styles.overlay, { backgroundColor: overlayBackground }]}>
+                <ThemedText type="defaultSemiBold" style={[styles.overlayLabel, { color: overlayTextColor }]}>
+                  Settings updating…
+                </ThemedText>
+              </View>
+            ) : (
+              <Pressable
+                onPress={startNextQuestion}
+                style={({ pressed }) => [
+                  styles.overlay,
+                  { backgroundColor: overlayBackground, opacity: pressed ? 0.9 : 1 },
+                ]}>
+                <ThemedText type="defaultSemiBold" style={[styles.overlayLabel, { color: overlayTextColor }]}>
+                  {status === 'lobby' ? 'Tap to Start' : 'Tap to Play'}
+                </ThemedText>
+              </Pressable>
+            )
           ) : undefined
         }
       />
@@ -166,45 +197,20 @@ export default function MultiplayerGameScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.modalContent}>
-              {/* Difficulties */}
-              <View style={styles.section}>
-                <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>Difficulty</ThemedText>
-                <View style={styles.chipGrid}>
-                  {availableDifficulties.map(option => {
-                    const isSelected = option.values.every(v => tempDifficulties.includes(v));
-                    return (
-                      <Pressable
-                        key={option.label}
-                        onPress={() => toggleDifficulty(option.values)}
-                        style={[styles.chip, { borderColor, backgroundColor: isSelected ? brandColor : 'transparent' }]}>
-                        <ThemedText style={[styles.chipLabel, { color: isSelected ? '#fff' : textColor }]}>
-                          {option.label}
-                        </ThemedText>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Categories */}
-              <View style={styles.section}>
-                <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>Categories</ThemedText>
-                <View style={styles.chipGrid}>
-                  {availableCategories.map(category => {
-                    const isSelected = tempCategories.includes(category.name);
-                    return (
-                      <Pressable
-                        key={category.name}
-                        onPress={() => toggleCategory(category.name)}
-                        style={[styles.chip, { borderColor, backgroundColor: isSelected ? brandColor : 'transparent' }]}>
-                        <ThemedText style={[styles.chipLabel, { color: isSelected ? '#fff' : textColor }]}>
-                          {category.name}
-                        </ThemedText>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
+              <ChipSelector
+                kind="difficulty"
+                options={availableDifficulties}
+                selected={tempDifficulties}
+                onToggle={toggleDifficulty}
+                label="Difficulty"
+              />
+              <ChipSelector
+                kind="category"
+                options={availableCategories}
+                selected={tempCategories}
+                onToggle={toggleCategory}
+                label="Categories"
+              />
 
               {/* Speed */}
               <View style={styles.section}>
@@ -255,6 +261,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: verticalScale(6),
   },
+  subtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  subtitleText: {
+    fontSize: responsiveFont(14),
+  },
+  subtitleDot: {
+    fontSize: responsiveFont(14),
+  },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: scale(24),
@@ -295,20 +312,6 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: responsiveFont(15),
-  },
-  chipGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  chip: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: scale(8),
-    paddingHorizontal: spacing.sm,
-    paddingVertical: verticalScale(6),
-  },
-  chipLabel: {
-    fontSize: responsiveFont(13),
   },
   modalActions: {
     flexDirection: 'row',
