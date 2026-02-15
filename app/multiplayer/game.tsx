@@ -38,11 +38,18 @@ export default function MultiplayerGameScreen() {
     isSelfLockedOut,
     selfPlayer,
     scores,
-    isHost,
     buzzTimerEnd,
     startNextQuestion,
-    submitAnswer,
+    buzzIn,
+    submitBuzzAnswer,
+    sendBuzzTyping,
+    buzzerAnswer,
+    buzzerResult,
+    promptText,
+    pausedByName,
+    noBuzzTimeout,
     pauseGame,
+    resumeGame,
     updateSettings,
     leaveGame,
   } = useMultiplayer();
@@ -90,6 +97,11 @@ export default function MultiplayerGameScreen() {
     await startNextQuestion();
   };
 
+  const handleCancelSettings = async () => {
+    setShowSettings(false);
+    await resumeGame();
+  };
+
   const handleLeave = async () => {
     await leaveGame();
     router.replace('/multiplayer/summary');
@@ -119,6 +131,8 @@ export default function MultiplayerGameScreen() {
   const overlayBackground = colorScheme === 'dark' ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.95)';
   const overlayTextColor = colorScheme === 'dark' ? '#fff' : '#0f172a';
 
+  // Another player is changing settings (not us)
+  const otherPlayerChangingSettings = status === 'paused' && pausedByName && pausedByName !== selfPlayer?.name;
   const showPausedOverlay = status === 'paused' && !showSettings;
   const showOverlay = (!isPlaying && status !== 'ended' && !currentQuestion) || showPausedOverlay;
 
@@ -139,11 +153,9 @@ export default function MultiplayerGameScreen() {
         }
         headerRight={
           <View style={styles.headerButtons}>
-            {isHost ? (
-              <Pressable onPress={handleOpenSettings} style={[styles.headerButton, { borderColor }]}>
-                <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>Settings</ThemedText>
-              </Pressable>
-            ) : null}
+            <Pressable onPress={handleOpenSettings} style={[styles.headerButton, { borderColor }]}>
+              <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>Settings</ThemedText>
+            </Pressable>
             <Pressable onPress={handleLeave} style={[styles.headerButton, { borderColor }]}>
               <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>Leave</ThemedText>
             </Pressable>
@@ -158,15 +170,20 @@ export default function MultiplayerGameScreen() {
         isBuzzLocked={isBuzzLocked || isSelfLockedOut}
         buzzerName={currentBuzzer?.name}
         buzzTimerEnd={buzzTimerEnd}
-        onBuzz={() => {}}
-        onSubmitAnswer={submitAnswer}
+        buzzerAnswer={buzzerAnswer}
+        buzzerResult={buzzerResult}
+        onBuzz={(wordIndex) => void buzzIn(wordIndex)}
+        onSubmitAnswer={submitBuzzAnswer}
+        onBuzzTyping={sendBuzzTyping}
+        onNoBuzzTimeout={noBuzzTimeout}
+        promptText={promptText}
         onNext={startNextQuestion}
         overlay={
           showOverlay ? (
-            showPausedOverlay ? (
+            otherPlayerChangingSettings ? (
               <View style={[styles.overlay, { backgroundColor: overlayBackground }]}>
                 <ThemedText type="defaultSemiBold" style={[styles.overlayLabel, { color: overlayTextColor }]}>
-                  Settings updating…
+                  {pausedByName} is changing game settings...
                 </ThemedText>
               </View>
             ) : (
@@ -177,7 +194,7 @@ export default function MultiplayerGameScreen() {
                   { backgroundColor: overlayBackground, opacity: pressed ? 0.9 : 1 },
                 ]}>
                 <ThemedText type="defaultSemiBold" style={[styles.overlayLabel, { color: overlayTextColor }]}>
-                  {status === 'lobby' ? 'Tap to Start' : 'Tap to Play'}
+                  {showPausedOverlay ? 'Game Paused — Tap to Resume' : status === 'lobby' ? 'Tap to Start' : 'Tap to Play'}
                 </ThemedText>
               </Pressable>
             )
@@ -186,7 +203,7 @@ export default function MultiplayerGameScreen() {
       />
 
       {/* Settings Modal */}
-      <Modal visible={showSettings} transparent animationType="slide" onRequestClose={() => setShowSettings(false)}>
+      <Modal visible={showSettings} transparent animationType="slide" onRequestClose={handleCancelSettings}>
         <View style={styles.modalBackdrop}>
           <ThemedView style={[styles.modalCard, { borderColor }]}>
             <View style={styles.modalHeader}>
@@ -230,7 +247,7 @@ export default function MultiplayerGameScreen() {
 
             <View style={styles.modalActions}>
               <Pressable
-                onPress={() => setShowSettings(false)}
+                onPress={handleCancelSettings}
                 style={[styles.secondaryButton, { borderColor }]}>
                 <ThemedText style={{ color: textColor }}>Cancel</ThemedText>
               </Pressable>

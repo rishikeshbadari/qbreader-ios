@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ThemedText';
@@ -23,6 +24,14 @@ export default function HostGameScreen() {
   const [error, setError] = useState<string>();
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedDifficulties, setSelectedDifficulties] = useState<number[]>([]);
+  const [speed, setSpeed] = useState(revealSpeed);
+
+  const speedLabel =
+    speed >= 0.95 ? 'Instant'
+    : speed >= 0.7 ? 'Fast'
+    : speed >= 0.4 ? 'Moderate'
+    : speed >= 0.2 ? 'Slow'
+    : 'Very slow';
 
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
@@ -74,7 +83,7 @@ export default function HostGameScreen() {
 
     try {
       const sessionId = await hostGame(
-        { difficulties: selectedDifficulties, categories: selectedCategories, revealSpeed },
+        { difficulties: selectedDifficulties, categories: selectedCategories, revealSpeed: speed },
         name.trim() || 'Player'
       );
       router.replace({ pathname: '/multiplayer/game', params: { sessionId } });
@@ -176,6 +185,25 @@ export default function HostGameScreen() {
           )}
         </View>
 
+        {/* Reveal Speed */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <ThemedText type="subtitle" style={styles.sectionTitle}>Reveal Speed</ThemedText>
+            <ThemedText style={[styles.speedLabel, { color: mutedColor }]}>{speedLabel}</ThemedText>
+          </View>
+          <Slider
+            minimumValue={0}
+            maximumValue={1}
+            step={0.05}
+            value={speed}
+            onValueChange={setSpeed}
+            minimumTrackTintColor={brandColor}
+            maximumTrackTintColor={borderColor}
+            thumbTintColor={brandColor}
+            style={styles.slider}
+          />
+        </View>
+
         {error && <ThemedText style={[styles.error, { color: errorColor }]}>{error}</ThemedText>}
       </ScrollView>
 
@@ -257,6 +285,12 @@ const styles = StyleSheet.create({
   },
   chipLabel: {
     fontSize: responsiveFont(13),
+  },
+  speedLabel: {
+    fontSize: responsiveFont(14),
+  },
+  slider: {
+    height: verticalScale(40),
   },
   button: {
     margin: spacing.lg,

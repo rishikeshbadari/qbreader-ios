@@ -9,6 +9,7 @@ export const SCORING = {
   POWER: 15,
   INCORRECT: -5,
   BUZZ_TIMEOUT_SECONDS: 8,
+  WRONG_ANSWER_DISPLAY_MS: 1500,
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -87,7 +88,7 @@ export type GameEvent =
   | { type: 'player:leave'; playerId: string }
   | { type: 'players:sync'; players: Player[]; hostId: string }
   | { type: 'game:start'; settings: GameSettings; hostId: string }
-  | { type: 'game:pause' }
+  | { type: 'game:pause'; playerName?: string }
   | { type: 'game:resume' }
   | { type: 'game:end'; summary?: GameSummary }
   | { type: 'game:settings'; settings: GameSettings }
@@ -97,6 +98,9 @@ export type GameEvent =
   | { type: 'buzz:unlock'; lockedOutPlayers: string[]; allLockedOut?: boolean; lastResult?: AnswerResult }
   | { type: 'buzz:submit'; buzz: Buzz }
   | { type: 'buzz:result'; buzz: Buzz; scores?: Record<string, number> }
+  | { type: 'buzz:typing'; playerId: string; text: string }
+  | { type: 'buzz:prompt'; playerId: string; directedPrompt?: string }
   | { type: 'buzz:timeout'; playerId: string }
+  | { type: 'question:timeup' }
   | { type: 'coordinator:change'; newCoordinatorId: string }
   | { type: 'state:sync'; state: StateSyncPayload };

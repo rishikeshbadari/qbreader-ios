@@ -10,17 +10,19 @@ class MultipeerSession: RCTEventEmitter, MCSessionDelegate, MCNearbyServiceAdver
   private var advertiser: MCNearbyServiceAdvertiser?
   private var browser: MCNearbyServiceBrowser?
   private var currentSessionId: String?
+  private var isBrowseOnly: Bool = false
+  private var discoveredPeers: [MCPeerID: [String: String]] = [:]
 
   override static func requiresMainQueueSetup() -> Bool {
     return false
   }
 
   override func supportedEvents() -> [String]! {
-    return ["MultipeerEvent"]
+    return ["MultipeerEvent", "MultipeerDiscovery"]
   }
 
-  @objc(startHosting:withResolver:withRejecter:)
-  func startHosting(sessionId: String, resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
+  @objc(startHosting:players:withResolver:withRejecter:)
+  func startHosting(sessionId: String, players: String, resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
     reset()
     currentSessionId = sessionId
     peerID = MCPeerID(displayName: UIDevice.current.name)
@@ -31,7 +33,7 @@ class MultipeerSession: RCTEventEmitter, MCSessionDelegate, MCNearbyServiceAdver
     session = MCSession(peer: peerID, securityIdentity: nil, encryptionPreference: .required)
     session?.delegate = self
 
-    let info = ["sessionId": sessionId]
+    let info = ["sessionId": sessionId, "players": players]
     advertiser = MCNearbyServiceAdvertiser(peer: peerID, discoveryInfo: info, serviceType: serviceType)
     advertiser?.delegate = self
     advertiser?.startAdvertisingPeer()
@@ -41,6 +43,23 @@ class MultipeerSession: RCTEventEmitter, MCSessionDelegate, MCNearbyServiceAdver
     browser?.delegate = self
     browser?.startBrowsingForPeers()
 
+    resolve(nil)
+  }
+
+  @objc(updateAdvertising:withResolver:withRejecter:)
+  func updateAdvertising(players: String, resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
+    guard let peerID = peerID, let sessionId = currentSessionId else {
+      resolve(nil)
+      return
+    }
+    // Stop current advertiser only (keep session + browser intact)
+    advertiser?.stopAdvertisingPeer()
+    advertiser = nil
+
+    let info = ["sessionId": sessionId, "players": players]
+    advertiser = MCNearbyServiceAdvertiser(peer: peerID, discoveryInfo: info, serviceType: serviceType)
+    advertiser?.delegate = self
+    advertiser?.startAdvertisingPeer()
     resolve(nil)
   }
 
@@ -86,6 +105,35 @@ class MultipeerSession: RCTEventEmitter, MCSessionDelegate, MCNearbyServiceAdver
     resolve(nil)
   }
 
+  // MARK: - Browsing (discovery-only, no connection)
+
+  @objc(startBrowsing:withRejecter:)
+  func startBrowsing(resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
+    reset()
+    isBrowseOnly = true
+    discoveredPeers = [:]
+    peerID = MCPeerID(displayName: UIDevice.current.name)
+    guard let peerID = peerID else {
+      reject("peer_init_failed", "Unable to create peer ID", nil)
+      return
+    }
+    // Browse-only: no MCSession, no advertiser
+    browser = MCNearbyServiceBrowser(peer: peerID, serviceType: serviceType)
+    browser?.delegate = self
+    browser?.startBrowsingForPeers()
+    resolve(nil)
+  }
+
+  @objc(stopBrowsing:withRejecter:)
+  func stopBrowsing(resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
+    browser?.stopBrowsingForPeers()
+    browser = nil
+    isBrowseOnly = false
+    discoveredPeers = [:]
+    peerID = nil
+    resolve(nil)
+  }
+
   private func reset() {
     advertiser?.stopAdvertisingPeer()
     browser?.stopBrowsingForPeers()
@@ -95,6 +143,8 @@ class MultipeerSession: RCTEventEmitter, MCSessionDelegate, MCNearbyServiceAdver
     session = nil
     peerID = nil
     currentSessionId = nil
+    isBrowseOnly = false
+    discoveredPeers = [:]
   }
 
   // MARK: - MCNearbyServiceAdvertiserDelegate
@@ -116,6 +166,21 @@ class MultipeerSession: RCTEventEmitter, MCSessionDelegate, MCNearbyServiceAdver
 
   // MARK: - MCNearbyServiceBrowserDelegate
   func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String : String]?) {
+    if isBrowseOnly {
+      // Discovery mode: emit event instead of connecting
+      if let info = info {
+        discoveredPeers[peerID] = info
+      }
+      let sessionId = info?["sessionId"] ?? ""
+      let players = info?["players"] ?? ""
+      sendEvent(withName: "MultipeerDiscovery", body: [
+        "type": "found",
+        "sessionId": sessionId,
+        "players": players,
+      ])
+      return
+    }
+    // Game mode: auto-invite matching peers
     if let expectedId = currentSessionId, let discovered = info?["sessionId"], expectedId != discovered {
       return
     }
@@ -123,7 +188,17 @@ class MultipeerSession: RCTEventEmitter, MCSessionDelegate, MCNearbyServiceAdver
   }
 
   func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
-    // no-op
+    if isBrowseOnly {
+      let info = discoveredPeers.removeValue(forKey: peerID)
+      let sessionId = info?["sessionId"] ?? ""
+      let players = info?["players"] ?? ""
+      sendEvent(withName: "MultipeerDiscovery", body: [
+        "type": "lost",
+        "sessionId": sessionId,
+        "players": players,
+      ])
+      return
+    }
   }
 
   func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {

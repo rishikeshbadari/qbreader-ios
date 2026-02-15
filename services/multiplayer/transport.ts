@@ -11,15 +11,34 @@ export type TransportCallbacks = {
 };
 
 /**
+ * A discovered nearby game session
+ */
+export type DiscoveredSession = {
+  sessionId: string;
+  players: string[];
+};
+
+/**
+ * Callbacks for peer discovery events
+ */
+export type DiscoveryCallbacks = {
+  onSessionFound: (session: DiscoveredSession) => void;
+  onSessionLost: (sessionId: string) => void;
+};
+
+/**
  * Transport interface for multiplayer communication
  */
 export interface MultiplayerTransport {
   readonly isHost: boolean;
   readonly sessionId: string | null;
-  startHosting(sessionId: string, callbacks: TransportCallbacks): Promise<void>;
+  startHosting(sessionId: string, playerNames: string, callbacks: TransportCallbacks): Promise<void>;
   joinSession(sessionId: string, callbacks: TransportCallbacks): Promise<void>;
   send(event: GameEvent): Promise<void>;
   disconnect(): Promise<void>;
+  updateAdvertising(playerNames: string): Promise<void>;
+  startBrowsing(callbacks: DiscoveryCallbacks): Promise<void>;
+  stopBrowsing(): Promise<void>;
 }
 
 const nativeMultipeer = NativeModules.MultipeerSession;
@@ -32,13 +51,14 @@ class MultipeerTransport implements MultiplayerTransport {
   sessionId: string | null = null;
   private emitter?: NativeEventEmitter;
   private subscription?: { remove: () => void };
+  private discoverySubscription?: { remove: () => void };
 
-  async startHosting(sessionId: string, callbacks: TransportCallbacks) {
+  async startHosting(sessionId: string, playerNames: string, callbacks: TransportCallbacks) {
     if (!nativeMultipeer) throw new Error('MultipeerConnectivity not available');
     this.isHost = true;
     this.sessionId = sessionId;
     this.attachListener(callbacks);
-    await nativeMultipeer.startHosting(sessionId);
+    await nativeMultipeer.startHosting(sessionId, playerNames);
   }
 
   async joinSession(sessionId: string, callbacks: TransportCallbacks) {
@@ -57,10 +77,42 @@ class MultipeerTransport implements MultiplayerTransport {
   async disconnect() {
     this.subscription?.remove();
     this.subscription = undefined;
+    this.discoverySubscription?.remove();
+    this.discoverySubscription = undefined;
     this.emitter = undefined;
     if (nativeMultipeer) await nativeMultipeer.disconnect();
     this.isHost = false;
     this.sessionId = null;
+  }
+
+  async updateAdvertising(playerNames: string) {
+    if (!nativeMultipeer) return;
+    await nativeMultipeer.updateAdvertising(playerNames);
+  }
+
+  async startBrowsing(callbacks: DiscoveryCallbacks) {
+    if (!nativeMultipeer) throw new Error('MultipeerConnectivity not available');
+    const emitter = new NativeEventEmitter(nativeMultipeer);
+    this.discoverySubscription = emitter.addListener(
+      'MultipeerDiscovery',
+      (raw: { type: string; sessionId: string; players: string }) => {
+        if (raw.type === 'found') {
+          callbacks.onSessionFound({
+            sessionId: raw.sessionId,
+            players: raw.players ? raw.players.split(',').filter(Boolean) : [],
+          });
+        } else if (raw.type === 'lost') {
+          callbacks.onSessionLost(raw.sessionId);
+        }
+      },
+    );
+    await nativeMultipeer.startBrowsing();
+  }
+
+  async stopBrowsing() {
+    this.discoverySubscription?.remove();
+    this.discoverySubscription = undefined;
+    if (nativeMultipeer) await nativeMultipeer.stopBrowsing();
   }
 
   private attachListener(callbacks: TransportCallbacks) {
@@ -84,7 +136,7 @@ class LoopbackTransport implements MultiplayerTransport {
   sessionId: string | null = null;
   private callbacks?: TransportCallbacks;
 
-  async startHosting(sessionId: string, callbacks: TransportCallbacks) {
+  async startHosting(sessionId: string, _playerNames: string, callbacks: TransportCallbacks) {
     this.isHost = true;
     this.sessionId = sessionId;
     this.callbacks = callbacks;
@@ -105,6 +157,18 @@ class LoopbackTransport implements MultiplayerTransport {
     this.isHost = false;
     this.sessionId = null;
     this.callbacks = undefined;
+  }
+
+  async updateAdvertising(_playerNames: string) {
+    // No-op in loopback mode
+  }
+
+  async startBrowsing(_callbacks: DiscoveryCallbacks) {
+    // No-op: discovery not available in loopback mode
+  }
+
+  async stopBrowsing() {
+    // No-op
   }
 }
 

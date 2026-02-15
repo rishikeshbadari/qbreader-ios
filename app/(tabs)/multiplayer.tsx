@@ -26,13 +26,8 @@ export default function MultiplayerTab() {
     },
     {
       title: 'Join a Game',
-      description: 'Enter a game code to join an existing session.',
+      description: 'Find and join a nearby game.',
       href: '/multiplayer/join' as const,
-    },
-    {
-      title: 'Last Game Summary',
-      description: 'Review results from your most recent game.',
-      href: '/multiplayer/summary' as const,
     },
   ];
 
@@ -78,6 +73,15 @@ export default function MultiplayerTab() {
             </Pressable>
           ))}
         </View>
+        <Pressable
+          onPress={() => router.push('/multiplayer/rules')}
+          accessibilityRole="button"
+          accessibilityLabel="How to Play"
+          style={({ pressed }) => [styles.rulesLink, { opacity: pressed ? 0.6 : 1 }]}>
+          <ThemedText style={[styles.rulesLinkText, { color: brandColor }]}>
+            How to Play
+          </ThemedText>
+        </Pressable>
       </ThemedView>
     </SafeAreaView>
   );
@@ -119,5 +123,13 @@ const styles = StyleSheet.create({
   },
   primaryTextMuted: {
     color: 'rgba(255, 255, 255, 0.75)',
+  },
+  rulesLink: {
+    alignSelf: 'center',
+    paddingVertical: verticalScale(8),
+  },
+  rulesLinkText: {
+    fontSize: responsiveFont(15),
+    fontWeight: '600',
   },
 });

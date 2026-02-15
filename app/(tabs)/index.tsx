@@ -19,6 +19,7 @@ export default function PlayScreen() {
     loadNextQuestion,
     judgeAnswer,
     lastResult,
+    promptInfo,
     clearError,
   } = useQuizSession();
 
@@ -111,6 +112,7 @@ export default function PlayScreen() {
         onSubmitAnswer={handleSubmitAnswer}
         onNext={handleNext}
         onRetry={handleRetry}
+        promptText={promptInfo?.directedPrompt}
         bottomPadding={tabBarHeight}
         parentHandlesBottomSafeArea
         overlay={

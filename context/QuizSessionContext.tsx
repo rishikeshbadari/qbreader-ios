@@ -22,6 +22,7 @@ interface QuizSessionContextValue {
   error?: string;
   history: SessionHistoryEntry[];
   lastResult?: AnswerResult;
+  promptInfo?: { directedPrompt?: string } | null;
   loadNextQuestion: () => Promise<void>;
   judgeAnswer: (answer: string) => void;
   skipQuestion: () => void;
@@ -45,6 +46,8 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
   const [history, setHistory] = useState<SessionHistoryEntry[]>([]);
   const [error, setError] = useState<string>();
   const [lastResult, setLastResult] = useState<AnswerResult>();
+  const [promptInfo, setPromptInfo] = useState<{ directedPrompt?: string } | null>(null);
+  const promptedRef = useRef(false);
   const { selectedDifficulties, selectedCategories } = useSettings();
 
   const clearError = useCallback(() => setError(undefined), []);
@@ -125,6 +128,8 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     setLoadingQuestion(true);
     setError(undefined);
     setLastResult(undefined);
+    setPromptInfo(null);
+    promptedRef.current = false;
 
     const queuedQuestions = nextQuestionsRef.current;
     if (queuedQuestions.length > 0) {
@@ -180,6 +185,21 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
         return;
       }
 
+      // Handle prompts: give the player one more chance to be more specific
+      if (result.directive === 'prompt' && !promptedRef.current) {
+        promptedRef.current = true;
+        setPromptInfo({ directedPrompt: result.directedPrompt });
+        return;
+      }
+
+      // Second prompt → treat as reject
+      if (result.directive === 'prompt') {
+        result = { ...result, directive: 'reject' };
+      }
+
+      promptedRef.current = false;
+      setPromptInfo(null);
+
       setLastResult(result);
       setHistory((prev) => {
         const next = [
@@ -206,6 +226,9 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
       return;
     }
 
+    promptedRef.current = false;
+    setPromptInfo(null);
+
     const timestamp = Date.now();
     setHistory((prev) => {
       const next = [
@@ -229,6 +252,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
       error,
       history,
       lastResult,
+      promptInfo,
       loadNextQuestion,
       judgeAnswer,
       skipQuestion,
@@ -242,6 +266,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
       judgeAnswer,
       skipQuestion,
       lastResult,
+      promptInfo,
       loadNextQuestion,
       loadingQuestion,
     ]

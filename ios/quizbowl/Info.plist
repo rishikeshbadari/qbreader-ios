@@ -38,6 +38,12 @@
     <string>12.0</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>QuizBowl uses the local network to discover and connect to nearby multiplayer games.</string>
+    <key>NSBonjourServices</key>
+    <array>
+      <string>_qbowl-mc._tcp</string>
+    </array>
     <key>NSAppTransportSecurity</key>
     <dict>
       <key>NSAllowsArbitraryLoads</key>
