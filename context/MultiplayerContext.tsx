@@ -20,9 +20,10 @@ import type {
   SessionStatus,
   StateSyncPayload,
 } from '@/types/multiplayer';
-import { SCORING } from '@/types/multiplayer';
+import { SCORING, PLAYER_COLORS } from '@/types/multiplayer';
 import type { AnswerResult, Tossup } from '@/types/qb';
 import { createTransport, type MultiplayerTransport } from '@/services/multiplayer/transport';
+import { WebSocketTransport } from '@/services/multiplayer/ws-transport';
 import { fetchRandomTossup } from '@/services/qbreader';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,6 +51,7 @@ function findPowerMarkWordIndex(questionText: string): number | undefined {
 type MultiplayerContextValue = {
   // State
   sessionId: string | null;
+  gameCode: string | null;
   status: SessionStatus;
   players: Player[];
   allPlayers: Player[];
@@ -71,10 +73,14 @@ type MultiplayerContextValue = {
   buzzerResult: { answer: string; isCorrect: boolean } | null;
   promptText: string | null;
   pausedByName: string | null;
+  readyPlayers: string[];
+  connectionStatuses: Record<string, 'connected' | 'reconnecting' | 'disconnected'>;
+  countdownSeconds: number | null;
+  playerColors: Record<string, string>;
 
   // Actions
   hostGame: (settings: GameSettings, playerName: string) => Promise<string>;
-  joinGame: (sessionId: string, playerName: string) => Promise<void>;
+  joinGame: (gameCode: string, playerName: string) => Promise<void>;
   startNextQuestion: () => Promise<void>;
   buzzIn: (wordIndex?: number) => Promise<void>;
   submitBuzzAnswer: (answer: string) => Promise<void>;
@@ -85,6 +91,10 @@ type MultiplayerContextValue = {
   updateSettings: (settings: GameSettings) => Promise<void>;
   endGame: () => Promise<void>;
   leaveGame: () => Promise<void>;
+  toggleReady: () => Promise<void>;
+  kickPlayer: (playerId: string) => Promise<void>;
+  transferHost: (newHostId: string) => Promise<void>;
+  startGameCountdown: () => void;
 };
 
 const MultiplayerContext = createContext<MultiplayerContextValue | null>(null);
@@ -100,6 +110,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
   // Core state
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [gameCode, setGameCode] = useState<string | null>(null);
   const [status, setStatus] = useState<SessionStatus>('idle');
   const [players, setPlayers] = useState<Player[]>([]);
   const [allPlayers, setAllPlayers] = useState<Player[]>([]);
@@ -131,6 +142,16 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   // Pause state: tracks which player paused to change settings
   const [pausedByName, setPausedByName] = useState<string | null>(null);
 
+  // Ready system state
+  const [readyPlayers, setReadyPlayers] = useState<string[]>([]);
+
+  // Connection status per player
+  const [connectionStatuses, setConnectionStatuses] = useState<Record<string, 'connected' | 'reconnecting' | 'disconnected'>>({});
+
+  // Countdown state
+  const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null);
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // Pre-fetched question for instant transitions
   const prefetchedRef = useRef<{ tossup: Tossup; pmIndex?: number; settingsKey: string } | null>(null);
   const prefetchAbortRef = useRef<AbortController | null>(null);
@@ -147,16 +168,25 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
   const isCoordinatorValue = Boolean(selfPlayer && coordinatorId === selfPlayer.id);
 
+  // Player colors: deterministic by join order
+  const playerColors = useMemo(() => {
+    const colors: Record<string, string> = {};
+    allPlayers.forEach((p, i) => {
+      colors[p.id] = PLAYER_COLORS[i % PLAYER_COLORS.length];
+    });
+    return colors;
+  }, [allPlayers]);
+
   // Refs for accessing current values in callbacks
   const stateRef = useRef({
     players, settings, currentQuestion, currentResult, selfPlayer,
     lockedOutPlayers, summary, hostId, scores, powerMarkWordIndex,
-    status, sessionId, allPlayers, buzzWordIndex,
+    status, sessionId, allPlayers, buzzWordIndex, gameCode, readyPlayers,
   });
   stateRef.current = {
     players, settings, currentQuestion, currentResult, selfPlayer,
     lockedOutPlayers, summary, hostId, scores, powerMarkWordIndex,
-    status, sessionId, allPlayers, buzzWordIndex,
+    status, sessionId, allPlayers, buzzWordIndex, gameCode, readyPlayers,
   };
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -193,8 +223,13 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       clearTimeout(buzzTimerRef.current);
       buzzTimerRef.current = null;
     }
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
     clearWrongAnswerTimer();
     setSessionId(null);
+    setGameCode(null);
     setStatus('idle');
     setPlayers([]);
     setAllPlayers([]);
@@ -217,6 +252,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setPromptText(null);
     promptedPlayerRef.current = null;
     setPausedByName(null);
+    setReadyPlayers([]);
+    setConnectionStatuses({});
+    setCountdownSeconds(null);
   }, [clearWrongAnswerTimer]);
 
   const addQuestionToSummary = useCallback((tossup: Tossup, pmIndex?: number) => {
@@ -484,6 +522,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         // Rule 5: Initialize score for new player
         setScores(prev => event.player.id in prev ? prev : { ...prev, [event.player.id]: 0 });
 
+        // Mark new player as connected
+        setConnectionStatuses(prev => ({ ...prev, [event.player.id]: 'connected' }));
+
         // Rule 5: Coordinator syncs FULL state to new player
         if (isCoordinatorFn()) {
           const s = stateRef.current;
@@ -497,6 +538,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
             scores: { ...s.scores, [event.player.id]: 0 },
             lockedOutPlayers: s.lockedOutPlayers,
             questionRecords: s.summary?.questions ?? [],
+            gameCode: s.gameCode ?? undefined,
+            readyPlayers: s.readyPlayers,
           };
           void send({ type: 'state:sync', state: syncPayload });
         }
@@ -527,6 +570,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
             ),
           };
         });
+
+        // Remove from ready list
+        setReadyPlayers(prev => prev.filter(id => id !== event.playerId));
         break;
       }
 
@@ -542,6 +588,50 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         break;
       }
 
+      case 'player:ready': {
+        setReadyPlayers(prev => {
+          if (event.ready) {
+            return prev.includes(event.playerId) ? prev : [...prev, event.playerId];
+          }
+          return prev.filter(id => id !== event.playerId);
+        });
+        break;
+      }
+
+      case 'player:kick': {
+        const { selfPlayer } = stateRef.current;
+        if (selfPlayer && event.playerId === selfPlayer.id) {
+          // We got kicked — disconnect and reset
+          void transportRef.current.disconnect();
+          resetState();
+          return;
+        }
+        setPlayers(prev => prev.filter(p => p.id !== event.playerId));
+        setAllPlayers(prev => prev.map(p =>
+          p.id === event.playerId ? { ...p, status: 'left' as const } : p
+        ));
+        setReadyPlayers(prev => prev.filter(id => id !== event.playerId));
+        break;
+      }
+
+      case 'player:connection_status': {
+        setConnectionStatuses(prev => ({
+          ...prev,
+          [event.playerId]: event.status,
+        }));
+        break;
+      }
+
+      case 'host:transfer': {
+        setHostId(event.newHostId);
+        break;
+      }
+
+      case 'game:countdown': {
+        setCountdownSeconds(event.seconds);
+        break;
+      }
+
       case 'game:start': {
         setSettings(event.settings);
         setStatus('playing');
@@ -549,6 +639,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setLockedOutPlayers([]);
         setCurrentResult(null);
         setCurrentBuzzer(null);
+        setCountdownSeconds(null);
         if (event.hostId) setHostId(event.hostId);
         break;
       }
@@ -735,6 +826,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         }
         setScores(s.scores);
         setLockedOutPlayers(s.lockedOutPlayers);
+        if (s.gameCode) setGameCode(s.gameCode);
+        if (s.readyPlayers) setReadyPlayers(s.readyPlayers);
         setSummary(prev => ({
           sessionId: prev?.sessionId ?? stateRef.current.sessionId ?? '',
           players: s.players,
@@ -745,7 +838,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         break;
       }
     }
-  }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, fetchAndBroadcastQuestion, judgeAndBroadcastResult, clearBuzzTimer, clearWrongAnswerTimer, startBuzzTimer]);
+  }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, fetchAndBroadcastQuestion, judgeAndBroadcastResult, clearBuzzTimer, clearWrongAnswerTimer, startBuzzTimer, resetState]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Coordinator Transfer Detection (Rule 4)
@@ -778,16 +871,55 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   }, [players, selfPlayer, send, isLoading, status, fetchAndBroadcastQuestion]);
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Update Advertising (keep discovered player names in sync)
+  // Server Event Callbacks (WebSocket transport specific)
   // ───────────────────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    if (transportRef.current.isHost && players.length > 0) {
-      void transportRef.current.updateAdvertising(
-        players.map(p => p.name).join(','),
-      );
-    }
-  }, [players]);
+  const setupServerCallbacks = useCallback((transport: MultiplayerTransport) => {
+    if (!(transport instanceof WebSocketTransport)) return;
+
+    transport.setServerCallbacks({
+      onRoomCreated: (code) => {
+        setGameCode(code);
+      },
+      onRoomJoined: (code, serverPlayers) => {
+        setGameCode(code);
+        // Server player list is informational — game-level player:join events handle state
+      },
+      onPlayerJoined: (_playerId, _playerName) => {
+        // Handled by game-level player:join event
+      },
+      onPlayerLeft: (playerId, reason) => {
+        if (reason === 'disconnected') {
+          setConnectionStatuses(prev => ({ ...prev, [playerId]: 'disconnected' }));
+        }
+        // 'left' and 'kicked' are handled by game-level events
+      },
+      onPlayerReconnected: (playerId) => {
+        setConnectionStatuses(prev => ({ ...prev, [playerId]: 'connected' }));
+      },
+      onHostTransferred: (newHostId) => {
+        setHostId(newHostId);
+      },
+      onConnectionStatusChange: (connectionStatus) => {
+        const { selfPlayer } = stateRef.current;
+        if (selfPlayer) {
+          setConnectionStatuses(prev => ({ ...prev, [selfPlayer.id]: connectionStatus }));
+        }
+      },
+      onRoomTimeout: () => {
+        setStatus('ended');
+      },
+      onRoomError: (message) => {
+        console.error('Room error:', message);
+      },
+      onRoomFull: () => {
+        console.warn('Room is full');
+      },
+      onRoomNotFound: () => {
+        console.warn('Room not found');
+      },
+    });
+  }, []);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Public Actions
@@ -809,6 +941,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setSelfPlayer(player);
     setHostId(player.id);
     setScores({ [player.id]: 0 });
+    setConnectionStatuses({ [player.id]: 'connected' });
+    setReadyPlayers([player.id]); // Host is auto-ready
     setSummary({
       sessionId: id,
       players: [player],
@@ -817,36 +951,55 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       questions: [],
     });
 
-    await transportRef.current.startHosting(id, player.name, {
+    // Set player info on transport (needed for reconnection)
+    if (transportRef.current instanceof WebSocketTransport) {
+      transportRef.current.setPlayerInfo(player.id, player.name);
+    }
+
+    setupServerCallbacks(transportRef.current);
+
+    await transportRef.current.startHosting(player.id, player.name, {
       onEvent: handleEvent,
       onError: err => console.error('Transport error:', err),
     });
 
     void send({ type: 'player:join', player });
-    return id;
-  }, [handleEvent, resetState, send]);
 
-  const joinGame = useCallback(async (id: string, playerName: string) => {
+    // For WebSocket transport, the game code is set asynchronously via onRoomCreated.
+    // Return the sessionId for navigation — the lobby will display the game code once available.
+    return id;
+  }, [handleEvent, resetState, send, setupServerCallbacks]);
+
+  const joinGame = useCallback(async (code: string, playerName: string) => {
     await transportRef.current.disconnect();
     transportRef.current = createTransport();
     resetState();
 
     const player: Player = { id: nanoid(6), name: playerName || 'Player', status: 'active' };
 
-    setSessionId(id);
+    setSessionId(code);
+    setGameCode(code.toUpperCase());
     setStatus('lobby');
     setPlayers([player]);
     setAllPlayers([player]);
     setSelfPlayer(player);
     setScores({ [player.id]: 0 });
+    setConnectionStatuses({ [player.id]: 'connected' });
 
-    await transportRef.current.joinSession(id, {
+    // Set player info on transport (needed for reconnection)
+    if (transportRef.current instanceof WebSocketTransport) {
+      transportRef.current.setPlayerInfo(player.id, player.name);
+    }
+
+    setupServerCallbacks(transportRef.current);
+
+    await transportRef.current.joinSession(code, {
       onEvent: handleEvent,
       onError: err => console.error('Transport error:', err),
     });
 
     void send({ type: 'player:join', player });
-  }, [handleEvent, resetState, send]);
+  }, [handleEvent, resetState, send, setupServerCallbacks]);
 
   const startNextQuestion = useCallback(async () => {
     if (isLoading) return;
@@ -971,11 +1124,98 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   }, [send, clearBuzzTimer]);
 
   // ───────────────────────────────────────────────────────────────────────────
+  // New Actions: Ready, Kick, Host Transfer, Countdown
+  // ───────────────────────────────────────────────────────────────────────────
+
+  const toggleReady = useCallback(async () => {
+    const { selfPlayer, readyPlayers: currentReady } = stateRef.current;
+    if (!selfPlayer) return;
+
+    const isCurrentlyReady = currentReady.includes(selfPlayer.id);
+    const newReady = !isCurrentlyReady;
+
+    setReadyPlayers(prev => {
+      if (newReady) return prev.includes(selfPlayer.id) ? prev : [...prev, selfPlayer.id];
+      return prev.filter(id => id !== selfPlayer.id);
+    });
+
+    void send({ type: 'player:ready', playerId: selfPlayer.id, ready: newReady });
+  }, [send]);
+
+  const kickPlayer = useCallback(async (playerId: string) => {
+    if (!isHostValue) return;
+    void send({ type: 'player:kick', playerId });
+
+    // Also tell the server to kick (for WebSocket transport)
+    if (transportRef.current instanceof WebSocketTransport) {
+      transportRef.current.kickPlayer(playerId);
+    }
+  }, [isHostValue, send]);
+
+  const transferHost = useCallback(async (newHostId: string) => {
+    if (!isHostValue) return;
+    setHostId(newHostId);
+    void send({ type: 'host:transfer', newHostId });
+
+    // Also tell the server
+    if (transportRef.current instanceof WebSocketTransport) {
+      transportRef.current.transferHost(newHostId);
+    }
+  }, [isHostValue, send]);
+
+  const startGameCountdown = useCallback(() => {
+    if (!isHostValue) return;
+    const { settings, hostId: currentHostId } = stateRef.current;
+    if (!settings || !currentHostId) return;
+
+    // Start 3-second countdown
+    let remaining = 3;
+    setCountdownSeconds(remaining);
+    void send({ type: 'game:countdown', seconds: remaining });
+
+    countdownTimerRef.current = setInterval(() => {
+      remaining--;
+      if (remaining > 0) {
+        setCountdownSeconds(remaining);
+        void send({ type: 'game:countdown', seconds: remaining });
+      } else {
+        // Countdown finished — start the game
+        if (countdownTimerRef.current) {
+          clearInterval(countdownTimerRef.current);
+          countdownTimerRef.current = null;
+        }
+        setCountdownSeconds(null);
+        setReadyPlayers([]);
+
+        const s = stateRef.current;
+        void send({ type: 'game:start', settings: s.settings!, hostId: s.hostId! });
+
+        // Trigger locally too
+        setStatus('playing');
+        setIsBuzzLocked(false);
+        setLockedOutPlayers([]);
+        setCurrentResult(null);
+        setCurrentBuzzer(null);
+
+        // Initialize summary for the new game
+        setSummary({
+          sessionId: s.sessionId ?? '',
+          players: s.players,
+          hostId: s.hostId ?? '',
+          settings: s.settings!,
+          questions: [],
+        });
+      }
+    }, 1000);
+  }, [isHostValue, send]);
+
+  // ───────────────────────────────────────────────────────────────────────────
   // Context Value
   // ───────────────────────────────────────────────────────────────────────────
 
   const value = useMemo<MultiplayerContextValue>(() => ({
     sessionId,
+    gameCode,
     status,
     players,
     allPlayers,
@@ -997,6 +1237,10 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     buzzerResult,
     promptText,
     pausedByName,
+    readyPlayers,
+    connectionStatuses,
+    countdownSeconds,
+    playerColors,
     hostGame,
     joinGame,
     startNextQuestion,
@@ -1009,13 +1253,19 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     updateSettings,
     endGame,
     leaveGame,
+    toggleReady,
+    kickPlayer,
+    transferHost,
+    startGameCountdown,
   }), [
-    sessionId, status, players, allPlayers, settings, currentQuestion, currentResult, currentBuzzer,
+    sessionId, gameCode, status, players, allPlayers, settings, currentQuestion, currentResult, currentBuzzer,
     isLoading, isBuzzLocked, isSelfLockedOut, summary, selfPlayer,
     hostId, scores, isHostValue, isCoordinatorValue, buzzTimerEnd,
     buzzerAnswer, buzzerResult, promptText, pausedByName,
+    readyPlayers, connectionStatuses, countdownSeconds, playerColors,
     hostGame, joinGame, startNextQuestion, buzzIn, submitBuzzAnswer, sendBuzzTyping, noBuzzTimeout,
     pauseGame, resumeGame, updateSettings, endGame, leaveGame,
+    toggleReady, kickPlayer, transferHost, startGameCountdown,
   ]);
 
   return (

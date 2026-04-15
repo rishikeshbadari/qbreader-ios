@@ -13,6 +13,25 @@ export const SCORING = {
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Player Constants
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const MAX_PLAYERS = 10;
+
+export const PLAYER_COLORS = [
+  '#4338CA', // indigo
+  '#DC2626', // red
+  '#16A34A', // green
+  '#EAB308', // yellow
+  '#9333EA', // purple
+  '#EA580C', // orange
+  '#0891B2', // cyan
+  '#DB2777', // pink
+  '#65A30D', // lime
+  '#6366F1', // violet
+] as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Core Types
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -21,6 +40,10 @@ export type Player = {
   id: string;
   name: string;
   status?: 'active' | 'left';
+  ready?: boolean;
+  connectionStatus?: 'connected' | 'reconnecting' | 'disconnected';
+  color?: string;
+  isHost?: boolean;
 };
 
 /** Game settings shared across all players */
@@ -76,6 +99,8 @@ export type StateSyncPayload = {
   scores: Record<string, number>;
   lockedOutPlayers: string[];
   questionRecords: QuestionRecord[];
+  gameCode?: string;
+  readyPlayers?: string[];
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -87,7 +112,12 @@ export type GameEvent =
   | { type: 'player:join'; player: Player }
   | { type: 'player:leave'; playerId: string }
   | { type: 'players:sync'; players: Player[]; hostId: string }
+  | { type: 'player:ready'; playerId: string; ready: boolean }
+  | { type: 'player:kick'; playerId: string }
+  | { type: 'player:connection_status'; playerId: string; status: 'connected' | 'reconnecting' | 'disconnected' }
+  | { type: 'host:transfer'; newHostId: string }
   | { type: 'game:start'; settings: GameSettings; hostId: string }
+  | { type: 'game:countdown'; seconds: number }
   | { type: 'game:pause'; playerName?: string }
   | { type: 'game:resume' }
   | { type: 'game:end'; summary?: GameSummary }

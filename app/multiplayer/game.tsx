@@ -134,7 +134,8 @@ export default function MultiplayerGameScreen() {
   // Another player is changing settings (not us)
   const otherPlayerChangingSettings = status === 'paused' && pausedByName && pausedByName !== selfPlayer?.name;
   const showPausedOverlay = status === 'paused' && !showSettings;
-  const showOverlay = (!isPlaying && status !== 'ended' && !currentQuestion) || showPausedOverlay;
+  // Only show overlay for pause states — lobby is handled by the lobby screen
+  const showOverlay = (isPlaying && !currentQuestion && !isLoading) || showPausedOverlay;
 
   return (
     <ThemedView style={[styles.gameContainer, { paddingTop: insets.top }]}>
@@ -194,7 +195,7 @@ export default function MultiplayerGameScreen() {
                   { backgroundColor: overlayBackground, opacity: pressed ? 0.9 : 1 },
                 ]}>
                 <ThemedText type="defaultSemiBold" style={[styles.overlayLabel, { color: overlayTextColor }]}>
-                  {showPausedOverlay ? 'Game Paused — Tap to Resume' : status === 'lobby' ? 'Tap to Start' : 'Tap to Play'}
+                  {showPausedOverlay ? 'Game Paused — Tap to Resume' : 'Tap to Play'}
                 </ThemedText>
               </Pressable>
             )

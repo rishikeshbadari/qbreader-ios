@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -11,6 +11,7 @@ import { useThemeColor } from '@/hooks/useThemeColor';
 import { SCORING, type GameSummary } from '@/types/multiplayer';
 import type { AnswerResult } from '@/types/qb';
 import { normalizeDirective } from '@/utils/directives';
+import { saveMatchToHistory } from '@/app/multiplayer/history';
 import { responsiveFont, scale, spacing, verticalScale, MIN_TOUCH_TARGET } from '@/utils/responsive';
 
 type PlayerScore = {
@@ -90,6 +91,15 @@ export default function MultiplayerSummaryScreen() {
   const errorColor = useThemeColor({}, 'error');
 
   const handleDone = () => router.replace('/(tabs)/multiplayer');
+
+  // Auto-save to match history
+  const savedRef = useRef(false);
+  useEffect(() => {
+    if (summary && !savedRef.current) {
+      savedRef.current = true;
+      saveMatchToHistory(summary).catch(() => {});
+    }
+  }, [summary]);
 
   if (!summary) {
     return (

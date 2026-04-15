@@ -24,7 +24,7 @@ export default function MultiplayerHome() {
         <View style={styles.header}>
         <ThemedText type="title">Multiplayer</ThemedText>
         <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
-          Play locally over Wi-Fi or Bluetooth with friends nearby.
+          Play with friends anywhere. Share a game code to join.
         </ThemedText>
       </View>
 
@@ -48,6 +48,18 @@ export default function MultiplayerHome() {
           ]}>
             <ThemedText type="defaultSemiBold" style={[styles.buttonLabel, { color: textColor }]}>
               Join a Game
+            </ThemedText>
+          </Pressable>
+        </Link>
+
+        <Link href="/multiplayer/history" asChild>
+          <Pressable style={({ pressed }) => [
+            styles.button,
+            styles.tertiaryButton,
+            { opacity: pressed ? 0.8 : 1 },
+          ]}>
+            <ThemedText type="defaultSemiBold" style={[styles.buttonLabel, { color: mutedColor }]}>
+              Match History
             </ThemedText>
           </Pressable>
         </Link>
@@ -85,6 +97,9 @@ const styles = StyleSheet.create({
   secondaryButton: {
     backgroundColor: 'transparent',
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  tertiaryButton: {
+    backgroundColor: 'transparent',
   },
   buttonLabel: {
     color: '#fff',

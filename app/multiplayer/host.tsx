@@ -82,11 +82,11 @@ export default function HostGameScreen() {
     setError(undefined);
 
     try {
-      const sessionId = await hostGame(
+      await hostGame(
         { difficulties: selectedDifficulties, categories: selectedCategories, revealSpeed: speed },
         name.trim() || 'Player'
       );
-      router.replace({ pathname: '/multiplayer/game', params: { sessionId } });
+      router.replace('/multiplayer/lobby');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to start game.');
     } finally {
