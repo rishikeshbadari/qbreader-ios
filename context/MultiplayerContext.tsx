@@ -23,7 +23,7 @@ import type {
 import { SCORING, PLAYER_COLORS } from '@/types/multiplayer';
 import type { AnswerResult, Tossup } from '@/types/qb';
 import { createTransport, type MultiplayerTransport } from '@/services/multiplayer/transport';
-import { WebSocketTransport } from '@/services/multiplayer/ws-transport';
+import { SupabaseTransport } from '@/services/multiplayer/supabase-transport';
 import { fetchRandomTossup } from '@/services/qbreader';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,6 +69,7 @@ type MultiplayerContextValue = {
   isHost: boolean;
   isCoordinator: boolean;
   buzzTimerEnd: number | null;
+  revealStartTime: number | null;
   buzzerAnswer: string;
   buzzerResult: { answer: string; isCorrect: boolean } | null;
   promptText: string | null;
@@ -126,6 +127,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const [hostId, setHostId] = useState<string | null>(null);
   const [scores, setScores] = useState<Record<string, number>>({});
   const [powerMarkWordIndex, setPowerMarkWordIndex] = useState<number | undefined>(undefined);
+  const [revealStartTime, setRevealStartTime] = useState<number | null>(null);
   const [buzzTimerEnd, setBuzzTimerEnd] = useState<number | null>(null);
   const buzzTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -152,9 +154,12 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null);
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Pre-fetched question for instant transitions
+  // Pre-fetched question (coordinator-local, before broadcasting to all devices)
   const prefetchedRef = useRef<{ tossup: Tossup; pmIndex?: number; settingsKey: string } | null>(null);
   const prefetchAbortRef = useRef<AbortController | null>(null);
+
+  // Preloaded question (received from coordinator, ready to reveal on all devices)
+  const preloadedQuestionRef = useRef<{ tossup: Tossup; pmIndex?: number } | null>(null);
 
   // Derived
   const isSelfLockedOut = selfPlayer ? lockedOutPlayers.includes(selfPlayer.id) : false;
@@ -219,6 +224,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     fetchAbortRef.current?.abort();
     prefetchAbortRef.current?.abort();
     prefetchedRef.current = null;
+    preloadedQuestionRef.current = null;
     if (buzzTimerRef.current) {
       clearTimeout(buzzTimerRef.current);
       buzzTimerRef.current = null;
@@ -245,6 +251,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setHostId(null);
     setScores({});
     setPowerMarkWordIndex(undefined);
+    setRevealStartTime(null);
     setBuzzTimerEnd(null);
     setBuzzerAnswer('');
     setBuzzWordIndex(undefined);
@@ -307,10 +314,15 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   }, [clearBuzzTimer, isCoordinatorFn, send]);
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Question Pre-fetch
+  // Question Pre-fetch & Pre-distribute
   // ───────────────────────────────────────────────────────────────────────────
 
-  const prefetchNextQuestion = useCallback(() => {
+  /**
+   * Coordinator: fetch a question and broadcast it to ALL devices as a preload.
+   * Called during the answer phase so by the time "Next" is tapped, every device
+   * already has the data — zero perceived latency on reveal.
+   */
+  const prefetchAndDistribute = useCallback(() => {
     const { settings } = stateRef.current;
     if (!settings) return;
 
@@ -324,22 +336,72 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     }).then(tossup => {
       if (controller.signal.aborted) return;
       const pmIndex = findPowerMarkWordIndex(tossup.question);
+
+      // Store locally
       prefetchedRef.current = {
         tossup,
         pmIndex,
         settingsKey: `${settings.difficulties.join(',')}_${settings.categories.join(',')}`,
       };
+      preloadedQuestionRef.current = { tossup, pmIndex };
+
+      // Broadcast to all other devices so they have it ready
+      void send({ type: 'question:preload', tossup, powerMarkWordIndex: pmIndex });
     }).catch(() => {});
-  }, []);
+  }, [send]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Question/Answer Logic
   // ───────────────────────────────────────────────────────────────────────────
 
+  /**
+   * Activate the preloaded question on the coordinator's device and send
+   * a lightweight "reveal" signal so all other devices start simultaneously.
+   */
+  const revealPreloadedQuestion = useCallback(() => {
+    const preloaded = preloadedQuestionRef.current;
+    if (!preloaded) return false;
+
+    preloadedQuestionRef.current = null;
+    prefetchedRef.current = null;
+
+    setCurrentResult(null);
+    setIsBuzzLocked(false);
+    setLockedOutPlayers([]);
+    setBuzzerAnswer('');
+    setBuzzerResult(null);
+    setBuzzWordIndex(undefined);
+    setPromptText(null);
+    promptedPlayerRef.current = null;
+    clearBuzzTimer();
+    clearWrongAnswerTimer();
+
+    const revealStart = Date.now();
+    setPowerMarkWordIndex(preloaded.pmIndex);
+    setRevealStartTime(revealStart);
+    setCurrentQuestion(preloaded.tossup);
+    addQuestionToSummary(preloaded.tossup, preloaded.pmIndex);
+    void send({ type: 'question:reveal', revealStartTime: revealStart });
+    setIsLoading(false);
+    setStatus('playing');
+
+    // Start pre-fetching the NEXT question for all devices
+    prefetchAndDistribute();
+    return true;
+  }, [send, addQuestionToSummary, clearBuzzTimer, clearWrongAnswerTimer, prefetchAndDistribute]);
+
+  /**
+   * Fallback: fetch a question on-demand and broadcast with question:new.
+   * Used when no preloaded question is available (first question, settings changed).
+   */
   const fetchAndBroadcastQuestion = useCallback(async () => {
     const { settings } = stateRef.current;
     if (!settings) return;
 
+    // Try the preloaded path first (zero latency)
+    if (revealPreloadedQuestion()) return;
+
+    // Fallback: fetch now
     fetchAbortRef.current?.abort();
     prefetchAbortRef.current?.abort();
 
@@ -355,44 +417,36 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     clearBuzzTimer();
     clearWrongAnswerTimer();
 
-    // Use prefetched question if available and settings match
-    const settingsKey = `${settings.difficulties.join(',')}_${settings.categories.join(',')}`;
-    const prefetched = prefetchedRef.current;
-    prefetchedRef.current = null;
-
     let tossup: Tossup;
     let pmIndex: number | undefined;
 
-    if (prefetched && prefetched.settingsKey === settingsKey) {
-      tossup = prefetched.tossup;
-      pmIndex = prefetched.pmIndex;
-    } else {
-      try {
-        const controller = new AbortController();
-        fetchAbortRef.current = controller;
-        tossup = await fetchRandomTossup(controller.signal, {
-          difficulties: settings.difficulties,
-          categories: settings.categories,
-        });
-        pmIndex = findPowerMarkWordIndex(tossup.question);
-      } catch (err) {
-        console.error('Failed to fetch question:', err);
-        setIsLoading(false);
-        setStatus('playing');
-        return;
-      }
+    try {
+      const controller = new AbortController();
+      fetchAbortRef.current = controller;
+      tossup = await fetchRandomTossup(controller.signal, {
+        difficulties: settings.difficulties,
+        categories: settings.categories,
+      });
+      pmIndex = findPowerMarkWordIndex(tossup.question);
+    } catch (err) {
+      console.error('Failed to fetch question:', err);
+      setIsLoading(false);
+      setStatus('playing');
+      return;
     }
 
+    const revealStart = Date.now();
     setPowerMarkWordIndex(pmIndex);
+    setRevealStartTime(revealStart);
     setCurrentQuestion(tossup);
     addQuestionToSummary(tossup, pmIndex);
-    void send({ type: 'question:new', tossup, powerMarkWordIndex: pmIndex });
+    void send({ type: 'question:new', tossup, powerMarkWordIndex: pmIndex, revealStartTime: revealStart });
     setIsLoading(false);
     setStatus('playing');
 
-    // Pre-fetch next question in the background
-    prefetchNextQuestion();
-  }, [send, addQuestionToSummary, clearBuzzTimer, clearWrongAnswerTimer, prefetchNextQuestion]);
+    // Pre-fetch + distribute next question to all devices
+    prefetchAndDistribute();
+  }, [send, addQuestionToSummary, clearBuzzTimer, clearWrongAnswerTimer, prefetchAndDistribute, revealPreloadedQuestion]);
 
   const judgeAndBroadcastResult = useCallback(async (buzz: Buzz) => {
     const { currentQuestion, currentResult, lockedOutPlayers, players } = stateRef.current;
@@ -678,6 +732,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       }
 
       case 'question:new': {
+        // Fallback path: question data arrives with the reveal signal
         setCurrentQuestion(event.tossup);
         setCurrentResult(null);
         setCurrentBuzzer(null);
@@ -687,12 +742,47 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         clearWrongAnswerTimer();
         setStatus('playing');
         setPowerMarkWordIndex(event.powerMarkWordIndex);
+        setRevealStartTime(event.revealStartTime ?? Date.now());
         setBuzzerAnswer('');
         setBuzzerResult(null);
         setBuzzWordIndex(undefined);
         setPromptText(null);
         promptedPlayerRef.current = null;
         addQuestionToSummary(event.tossup, event.powerMarkWordIndex);
+        break;
+      }
+
+      case 'question:preload': {
+        // Coordinator sent the next question early — store it for instant reveal
+        preloadedQuestionRef.current = {
+          tossup: event.tossup,
+          pmIndex: event.powerMarkWordIndex,
+        };
+        break;
+      }
+
+      case 'question:reveal': {
+        // "Go" signal — activate the preloaded question
+        const preloaded = preloadedQuestionRef.current;
+        if (preloaded) {
+          preloadedQuestionRef.current = null;
+          setCurrentQuestion(preloaded.tossup);
+          setCurrentResult(null);
+          setCurrentBuzzer(null);
+          setIsBuzzLocked(false);
+          setLockedOutPlayers([]);
+          clearBuzzTimer();
+          clearWrongAnswerTimer();
+          setStatus('playing');
+          setPowerMarkWordIndex(preloaded.pmIndex);
+          setRevealStartTime(event.revealStartTime);
+          setBuzzerAnswer('');
+          setBuzzerResult(null);
+          setBuzzWordIndex(undefined);
+          setPromptText(null);
+          promptedPlayerRef.current = null;
+          addQuestionToSummary(preloaded.tossup, preloaded.pmIndex);
+        }
         break;
       }
 
@@ -766,6 +856,15 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           // Show wrong answer — buzz:unlock (arriving after the delay) will clear it
           setBuzzerResult({ answer: event.buzz.answer, isCorrect: false });
           setBuzzerAnswer(event.buzz.answer);
+
+          // Immediately mark the buzzer as locked out so the question
+          // reveal continues for them while others can still play.
+          const { selfPlayer } = stateRef.current;
+          if (selfPlayer && event.buzz.playerId === selfPlayer.id) {
+            setLockedOutPlayers(prev =>
+              prev.includes(event.buzz.playerId) ? prev : [...prev, event.buzz.playerId]
+            );
+          }
         }
 
         // Rule 6/7: Sync scores from coordinator
@@ -875,7 +974,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   // ───────────────────────────────────────────────────────────────────────────
 
   const setupServerCallbacks = useCallback((transport: MultiplayerTransport) => {
-    if (!(transport instanceof WebSocketTransport)) return;
+    if (!(transport instanceof SupabaseTransport)) return;
 
     transport.setServerCallbacks({
       onRoomCreated: (code) => {
@@ -891,8 +990,25 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       onPlayerLeft: (playerId, reason) => {
         if (reason === 'disconnected') {
           setConnectionStatuses(prev => ({ ...prev, [playerId]: 'disconnected' }));
+        } else {
+          // Player left or was kicked — remove immediately.
+          // This is the authoritative signal from the server; the game-level
+          // relay event may not arrive if the WS closed before it was flushed.
+          setPlayers(prev => prev.filter(p => p.id !== playerId));
+          setAllPlayers(prev => prev.map(p =>
+            p.id === playerId ? { ...p, status: 'left' as const } : p
+          ));
+          setReadyPlayers(prev => prev.filter(id => id !== playerId));
+          setSummary(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              players: prev.players.map(p =>
+                p.id === playerId ? { ...p, status: 'left' as const } : p
+              ),
+            };
+          });
         }
-        // 'left' and 'kicked' are handled by game-level events
       },
       onPlayerReconnected: (playerId) => {
         setConnectionStatuses(prev => ({ ...prev, [playerId]: 'connected' }));
@@ -952,7 +1068,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     });
 
     // Set player info on transport (needed for reconnection)
-    if (transportRef.current instanceof WebSocketTransport) {
+    if (transportRef.current instanceof SupabaseTransport) {
       transportRef.current.setPlayerInfo(player.id, player.name);
     }
 
@@ -987,7 +1103,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setConnectionStatuses({ [player.id]: 'connected' });
 
     // Set player info on transport (needed for reconnection)
-    if (transportRef.current instanceof WebSocketTransport) {
+    if (transportRef.current instanceof SupabaseTransport) {
       transportRef.current.setPlayerInfo(player.id, player.name);
     }
 
@@ -1093,8 +1209,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const updateSettings = useCallback(async (newSettings: GameSettings) => {
     setSettings(newSettings);
     setSummary(prev => prev ? { ...prev, settings: newSettings } : prev);
-    // Invalidate prefetch since settings changed
+    // Invalidate prefetch + preload since settings changed
     prefetchedRef.current = null;
+    preloadedQuestionRef.current = null;
     prefetchAbortRef.current?.abort();
     void send({ type: 'game:settings', settings: newSettings });
   }, [send]);
@@ -1147,7 +1264,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     void send({ type: 'player:kick', playerId });
 
     // Also tell the server to kick (for WebSocket transport)
-    if (transportRef.current instanceof WebSocketTransport) {
+    if (transportRef.current instanceof SupabaseTransport) {
       transportRef.current.kickPlayer(playerId);
     }
   }, [isHostValue, send]);
@@ -1158,7 +1275,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     void send({ type: 'host:transfer', newHostId });
 
     // Also tell the server
-    if (transportRef.current instanceof WebSocketTransport) {
+    if (transportRef.current instanceof SupabaseTransport) {
       transportRef.current.transferHost(newHostId);
     }
   }, [isHostValue, send]);
@@ -1233,6 +1350,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     isHost: isHostValue,
     isCoordinator: isCoordinatorValue,
     buzzTimerEnd,
+    revealStartTime,
     buzzerAnswer,
     buzzerResult,
     promptText,
@@ -1260,7 +1378,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   }), [
     sessionId, gameCode, status, players, allPlayers, settings, currentQuestion, currentResult, currentBuzzer,
     isLoading, isBuzzLocked, isSelfLockedOut, summary, selfPlayer,
-    hostId, scores, isHostValue, isCoordinatorValue, buzzTimerEnd,
+    hostId, scores, isHostValue, isCoordinatorValue, buzzTimerEnd, revealStartTime,
     buzzerAnswer, buzzerResult, promptText, pausedByName,
     readyPlayers, connectionStatuses, countdownSeconds, playerColors,
     hostGame, joinGame, startNextQuestion, buzzIn, submitBuzzAnswer, sendBuzzTyping, noBuzzTimeout,

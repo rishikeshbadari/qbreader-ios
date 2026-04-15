@@ -39,6 +39,7 @@ export default function MultiplayerGameScreen() {
     selfPlayer,
     scores,
     buzzTimerEnd,
+    revealStartTime,
     startNextQuestion,
     buzzIn,
     submitBuzzAnswer,
@@ -94,6 +95,7 @@ export default function MultiplayerGameScreen() {
       revealSpeed: tempSpeed,
     });
     setShowSettings(false);
+    await resumeGame();
     await startNextQuestion();
   };
 
@@ -167,8 +169,10 @@ export default function MultiplayerGameScreen() {
         error={status === 'ended' ? 'Game ended' : undefined}
         result={currentResult}
         revealSpeed={settings?.revealSpeed}
+        revealStartTime={revealStartTime}
         isPlaying={isPlaying}
-        isBuzzLocked={isBuzzLocked || isSelfLockedOut}
+        isBuzzLocked={isBuzzLocked}
+        isSelfLockedOut={isSelfLockedOut}
         buzzerName={currentBuzzer?.name}
         buzzTimerEnd={buzzTimerEnd}
         buzzerAnswer={buzzerAnswer}

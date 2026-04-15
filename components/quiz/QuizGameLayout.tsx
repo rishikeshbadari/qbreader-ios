@@ -36,6 +36,7 @@ type Props = {
   // Game state
   isPlaying: boolean;
   isBuzzLocked?: boolean;
+  isSelfLockedOut?: boolean; // Player answered wrong — can't buzz but can still watch
   buzzerName?: string; // Name of player who is currently buzzing (multiplayer)
 
   // Multiplayer buzz state
@@ -64,6 +65,9 @@ type Props = {
   // Called when the full question is revealed and no one buzzes within the timer
   onNoBuzzTimeout?: () => void;
 
+  // Synchronized reveal start time (epoch ms) — lets late-receiving devices skip ahead
+  revealStartTime?: number | null;
+
   // Prompt text (e.g. "Be more specific") — reopens buzz input for another attempt
   promptText?: string | null;
 };
@@ -79,6 +83,7 @@ export function QuizGameLayout({
   revealSpeed,
   isPlaying,
   isBuzzLocked = false,
+  isSelfLockedOut = false,
   buzzerName,
   buzzerAnswer: remoteBuzzerAnswer,
   buzzerResult,
@@ -91,6 +96,7 @@ export function QuizGameLayout({
   bottomPadding = 0,
   parentHandlesBottomSafeArea = false,
   buzzTimerEnd,
+  revealStartTime,
   onNoBuzzTimeout,
   promptText,
 }: Props) {
@@ -144,25 +150,42 @@ export function QuizGameLayout({
     return () => clearInterval(interval);
   }, [effectiveTimerEnd]);
 
-  // No-buzz timer: starts when question is fully revealed and no one has buzzed
+  // No-buzz timer: starts when question is fully revealed and no one has buzzed.
+  // Pauses while someone is buzzing, resumes with remaining time after a wrong answer.
   const [revealComplete, setRevealComplete] = useState(false);
   const [noBuzzTimerEnd, setNoBuzzTimerEnd] = useState<number | null>(null);
   const [noBuzzSeconds, setNoBuzzSeconds] = useState<number | null>(null);
   const noBuzzFiredRef = useRef(false);
+  const noBuzzPausedRemainingRef = useRef<number | null>(null);
 
-  // Start no-buzz timer when reveal completes (only if onNoBuzzTimeout is provided)
+  // Start no-buzz timer when reveal completes (first time only)
   useEffect(() => {
     if (revealComplete && isPlaying && !hasBuzzed && !isBuzzLocked && !result && onNoBuzzTimeout) {
-      setNoBuzzTimerEnd(Date.now() + SCORING.BUZZ_TIMEOUT_SECONDS * 1000);
+      // Only start if there's no saved remaining time (i.e. truly first start)
+      if (noBuzzPausedRemainingRef.current == null && !noBuzzTimerEnd) {
+        setNoBuzzTimerEnd(Date.now() + SCORING.BUZZ_TIMEOUT_SECONDS * 1000);
+      } else if (noBuzzPausedRemainingRef.current != null) {
+        // Resume from where we paused
+        setNoBuzzTimerEnd(Date.now() + noBuzzPausedRemainingRef.current);
+        noBuzzPausedRemainingRef.current = null;
+      }
     }
-  }, [revealComplete, isPlaying, hasBuzzed, isBuzzLocked, result, onNoBuzzTimeout]);
+  }, [revealComplete, isPlaying, hasBuzzed, isBuzzLocked, result, onNoBuzzTimeout, noBuzzTimerEnd]);
 
-  // Cancel no-buzz timer if someone buzzes or result arrives
+  // Pause no-buzz timer when someone buzzes; cancel on final result
   useEffect(() => {
-    if (hasBuzzed || isBuzzLocked || result) {
+    if (result) {
+      // Question resolved — cancel entirely
+      noBuzzPausedRemainingRef.current = null;
       setNoBuzzTimerEnd(null);
+    } else if (hasBuzzed || isBuzzLocked) {
+      // Someone is buzzing — pause by saving remaining time
+      if (noBuzzTimerEnd) {
+        noBuzzPausedRemainingRef.current = Math.max(0, noBuzzTimerEnd - Date.now());
+        setNoBuzzTimerEnd(null);
+      }
     }
-  }, [hasBuzzed, isBuzzLocked, result]);
+  }, [hasBuzzed, isBuzzLocked, result, noBuzzTimerEnd]);
 
   // No-buzz countdown + auto-trigger
   useEffect(() => {
@@ -220,6 +243,7 @@ export function QuizGameLayout({
     setRevealComplete(false);
     setNoBuzzTimerEnd(null);
     noBuzzFiredRef.current = false;
+    noBuzzPausedRemainingRef.current = null;
   }, [question?.id]);
 
   // Reset submitted flag when buzz state changes
@@ -282,7 +306,7 @@ export function QuizGameLayout({
   };
 
   const handleBuzz = () => {
-    if (!question || isLoading || hasBuzzed || !isPlaying || isBuzzLocked) return;
+    if (!question || isLoading || hasBuzzed || !isPlaying || isBuzzLocked || isSelfLockedOut) return;
     setHasBuzzed(true);
     onBuzz(wordIndexRef.current);
   };
@@ -338,6 +362,7 @@ export function QuizGameLayout({
               result={result ?? undefined}
               revealActive={isPlaying && !isBuzzLocked}
               revealSpeedOverride={revealSpeed}
+              revealStartTime={revealStartTime}
               showRevealButton={false}
               onWordIndexChange={handleWordIndexChange}
               onFullQuestionRevealChange={setRevealComplete}
@@ -402,12 +427,12 @@ export function QuizGameLayout({
           {/* Action button - Buzz or Next */}
           <Pressable
             onPress={handleMainAction}
-            disabled={!question || isLoading || !isPlaying || (hasBuzzed && !showResult) || (!showNextButton && isBuzzLocked)}
+            disabled={!question || isLoading || !isPlaying || (hasBuzzed && !showResult) || (!showNextButton && (isBuzzLocked || isSelfLockedOut))}
             style={({ pressed }) => [
               styles.mainButton,
               {
                 backgroundColor: showNextButton ? brandColor : dangerColor,
-                opacity: !question || isLoading ? 0.25 : (hasBuzzed && !showResult) || (!showNextButton && isBuzzLocked) ? 0.6 : pressed ? 0.9 : 1,
+                opacity: !question || isLoading ? 0.25 : (hasBuzzed && !showResult) || (!showNextButton && (isBuzzLocked || isSelfLockedOut)) ? 0.6 : pressed ? 0.9 : 1,
               },
             ]}>
             <ThemedText type="defaultSemiBold" style={styles.actionLabel}>

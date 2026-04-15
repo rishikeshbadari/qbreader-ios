@@ -22,6 +22,7 @@ interface Props {
   onFullQuestionRevealChange?: (isRevealed: boolean) => void;
   onWordIndexChange?: (wordIndex: number) => void;
   revealSpeedOverride?: number;
+  revealStartTime?: number | null;
   showRevealButton?: boolean;
   showMeta?: boolean;
 }
@@ -37,6 +38,7 @@ export function QuestionCard({
   onFullQuestionRevealChange,
   onWordIndexChange,
   revealSpeedOverride,
+  revealStartTime,
   showRevealButton = true,
   showMeta = true,
 }: Props) {
@@ -132,20 +134,48 @@ export function QuestionCard({
     shouldAnimateQuestion,
   ]);
 
+  // Track whether the initial revealStartTime sync has been applied for this question
+  const initialSyncAppliedRef = useRef(false);
+  useEffect(() => {
+    initialSyncAppliedRef.current = false;
+  }, [tossup?.id]);
+
   useEffect(() => {
     if (!isRevealRunning) {
       clearAnimationTimeout();
       return;
     }
 
-    if (revealIndexRef.current >= wordsRef.current.length) {
+    const words = wordsRef.current;
+
+    // Sync to revealStartTime ONLY on the first reveal of a new question.
+    // This catches up devices that received the question late.
+    // On resume after a buzz pause, skip this — continue from where we stopped.
+    if (!initialSyncAppliedRef.current && revealStartTime && revealIntervalMs > 0 && revealIndexRef.current < words.length) {
+      initialSyncAppliedRef.current = true;
+      const elapsed = Date.now() - revealStartTime;
+      const targetIndex = Math.min(Math.floor(elapsed / revealIntervalMs) + 1, words.length);
+
+      if (targetIndex > revealIndexRef.current) {
+        revealIndexRef.current = targetIndex;
+        setDisplayedQuestion(words.slice(0, targetIndex).join(' '));
+        onWordIndexChange?.(targetIndex);
+
+        if (targetIndex >= words.length) {
+          setHasRevealedFullQuestion((prev) => (prev ? prev : true));
+          return;
+        }
+      }
+    }
+
+    if (revealIndexRef.current >= words.length) {
       setHasRevealedFullQuestion((prev) => (prev ? prev : true));
       clearAnimationTimeout();
       return;
     }
 
     const revealNextWord = () => {
-      const nextWord = wordsRef.current[revealIndexRef.current];
+      const nextWord = words[revealIndexRef.current];
       if (typeof nextWord !== 'string') {
         return;
       }
@@ -156,9 +186,9 @@ export function QuestionCard({
       revealIndexRef.current += 1;
       onWordIndexChange?.(revealIndexRef.current);
 
-      if (revealIndexRef.current < wordsRef.current.length && !buzzedRef.current) {
+      if (revealIndexRef.current < words.length && !buzzedRef.current) {
         animationTimeout.current = setTimeout(revealNextWord, revealIntervalMs);
-      } else if (revealIndexRef.current >= wordsRef.current.length) {
+      } else if (revealIndexRef.current >= words.length) {
         setHasRevealedFullQuestion((prev) => (prev ? prev : true));
       }
     };
@@ -168,7 +198,7 @@ export function QuestionCard({
     return () => {
       clearAnimationTimeout();
     };
-  }, [isRevealRunning, tossup?.id, revealIntervalMs]);
+  }, [isRevealRunning, tossup?.id, revealIntervalMs, revealStartTime]);
 
   // Scroll effect
   useEffect(() => {

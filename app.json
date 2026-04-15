@@ -42,7 +42,8 @@
       "typedRoutes": true
     },
     "extra": {
-      "relayServerUrl": "ws://192.168.0.105:8080",
+      "supabaseUrl": "https://uwdahgoyvqdbliqvcfij.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3ZGFoZ295dnFkYmxpcXZjZmlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyMTUxNTYsImV4cCI6MjA5MTc5MTE1Nn0.lI2tQv6b-t5LCU8yrySCFnE97RETPKe1YYrPiXLhc4E",
       "router": {},
       "eas": {
         "projectId": "6102f1b8-ea82-41ef-a30b-62e4b331bdac"

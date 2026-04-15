@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 
 import type { GameEvent } from '@/types/multiplayer';
-import { WebSocketTransport } from './ws-transport';
+import { SupabaseTransport } from './supabase-transport';
 
 /**
  * Callbacks for transport events
@@ -20,7 +20,7 @@ export type DiscoveredSession = {
 };
 
 /**
- * Callbacks for peer discovery events (legacy — no-op for WebSocket transport)
+ * Callbacks for peer discovery events (no-op for current transports)
  */
 export type DiscoveryCallbacks = {
   onSessionFound: (session: DiscoveredSession) => void;
@@ -86,15 +86,17 @@ class LoopbackTransport implements MultiplayerTransport {
   }
 }
 
-const RELAY_SERVER_URL =
-  Constants.expoConfig?.extra?.relayServerUrl ?? 'ws://localhost:8080';
-
 /**
  * Create the appropriate transport for the current platform
  */
 export function createTransport(): MultiplayerTransport {
-  if (RELAY_SERVER_URL && RELAY_SERVER_URL !== 'loopback') {
-    return new WebSocketTransport(RELAY_SERVER_URL);
+  const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
+  const supabaseKey = Constants.expoConfig?.extra?.supabaseAnonKey;
+
+  if (supabaseUrl && supabaseKey) {
+    return new SupabaseTransport();
   }
+
+  // Fallback for development without Supabase
   return new LoopbackTransport();
 }
