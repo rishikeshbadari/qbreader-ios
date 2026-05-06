@@ -315,7 +315,8 @@ export function QuizGameLayout({
 
   // Derived state - hasBuzzed means THIS user buzzed, so show answer input regardless of isBuzzLocked
   // Also keep open during prompt (prevents flicker between handleSubmit and prompt effect)
-  const isAnswering = (activeHasBuzzed || (!isBuzzerControlled && !!promptText && !result)) && isPlaying && !result;
+  const showWrongAnswerFlash = !!buzzerResult && !buzzerResult.isCorrect && !result;
+  const isAnswering = (activeHasBuzzed || (!isBuzzerControlled && !!promptText && !result)) && isPlaying && !result && !showWrongAnswerFlash;
   const showResult = Boolean(result);
   const showNextButton = showResult;
   const canBuzz = Boolean(
@@ -411,8 +412,11 @@ export function QuizGameLayout({
               onFullQuestionRevealChange={setRevealComplete}
             />
             {overlay}
-            {/* Show buzzer name when someone is buzzing / wrong answer flash / prompt */}
-            {buzzerName && isBuzzLocked && !activeHasBuzzed && !showResult && (
+            {/* Show buzzer name when someone is buzzing / wrong answer flash / prompt.
+                The wrong-answer flash is shown to EVERYONE (including the buzzer) so
+                the player who got it wrong sees the Incorrect feedback before the
+                reveal resumes. Typing/prompt overlays remain hidden from the buzzer. */}
+            {buzzerName && isBuzzLocked && !showResult && (showWrongAnswerFlash || !activeHasBuzzed) && (
               <View style={[styles.buzzerOverlay, { backgroundColor: colorScheme === 'dark' ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)' }]}>
                 {buzzerResult && !buzzerResult.isCorrect ? (
                   <>
