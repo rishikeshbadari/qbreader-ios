@@ -55,6 +55,7 @@ export function QuestionCard({
   const [displayedQuestion, setDisplayedQuestion] = useState('');
   const animationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const buzzedRef = useRef(isBuzzed);
+  const onWordIndexChangeRef = useRef(onWordIndexChange);
   const questionScrollRef = useRef<ScrollView | null>(null);
   const [hasRevealedFullQuestion, setHasRevealedFullQuestion] = useState(false);
   const wordsRef = useRef<string[]>([]);
@@ -75,6 +76,10 @@ export function QuestionCard({
   useEffect(() => {
     setHasRevealedFullQuestion(false);
   }, [tossup?.id]);
+
+  useEffect(() => {
+    onWordIndexChangeRef.current = onWordIndexChange;
+  }, [onWordIndexChange]);
 
   const clearAnimationTimeout = () => {
     if (animationTimeout.current) {
@@ -107,7 +112,7 @@ export function QuestionCard({
     if (showAnswer || hasRevealedFullQuestion || revealIntervalMs === 0) {
       revealIndexRef.current = words.length;
       setDisplayedQuestion(questionText);
-      onWordIndexChange?.(words.length);
+      onWordIndexChangeRef.current?.(words.length);
       if ((showAnswer || revealIntervalMs === 0) && !hasRevealedFullQuestion) {
         setHasRevealedFullQuestion(true);
       }
@@ -117,7 +122,7 @@ export function QuestionCard({
     if (shouldAnimateQuestion && words.length > 0) {
       revealIndexRef.current = 1;
       setDisplayedQuestion(words[0]);
-      onWordIndexChange?.(1);
+      onWordIndexChangeRef.current?.(1);
     } else {
       revealIndexRef.current = 0;
       setDisplayedQuestion('');
@@ -159,7 +164,7 @@ export function QuestionCard({
       if (targetIndex > revealIndexRef.current) {
         revealIndexRef.current = targetIndex;
         setDisplayedQuestion(words.slice(0, targetIndex).join(' '));
-        onWordIndexChange?.(targetIndex);
+        onWordIndexChangeRef.current?.(targetIndex);
 
         if (targetIndex >= words.length) {
           setHasRevealedFullQuestion((prev) => (prev ? prev : true));
@@ -184,7 +189,7 @@ export function QuestionCard({
         previous.length > 0 ? `${previous} ${nextWord}` : nextWord
       );
       revealIndexRef.current += 1;
-      onWordIndexChange?.(revealIndexRef.current);
+      onWordIndexChangeRef.current?.(revealIndexRef.current);
 
       if (revealIndexRef.current < words.length && !buzzedRef.current) {
         animationTimeout.current = setTimeout(revealNextWord, revealIntervalMs);
@@ -328,15 +333,15 @@ export function QuestionCard({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    borderWidth: scale(1),
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: scale(24),
     padding: spacing.lg,
     gap: spacing.lg,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: scale(10) },
-    shadowOpacity: 0.08,
-    shadowRadius: scale(25),
-    elevation: 4,
+    shadowOffset: { width: 0, height: verticalScale(8) },
+    shadowOpacity: 0.06,
+    shadowRadius: scale(20),
+    elevation: 2,
   },
   metaHeader: {
     flexDirection: 'row',
@@ -354,7 +359,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   chip: {
-    borderWidth: scale(1),
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 999,
     paddingHorizontal: scale(10),
     paddingVertical: verticalScale(4),

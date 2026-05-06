@@ -26,7 +26,6 @@ export default function MultiplayerGameScreen() {
   const insets = useSafeAreaInsets();
 
   const {
-    sessionId,
     status,
     players,
     settings,
@@ -38,8 +37,10 @@ export default function MultiplayerGameScreen() {
     isSelfLockedOut,
     selfPlayer,
     scores,
+    isHost,
     buzzTimerEnd,
     revealStartTime,
+    buzzQueuePosition,
     startNextQuestion,
     buzzIn,
     submitBuzzAnswer,
@@ -81,6 +82,7 @@ export default function MultiplayerGameScreen() {
   const selfScore = selfPlayer ? (scores[selfPlayer.id] ?? 0) : 0;
 
   const handleOpenSettings = async () => {
+    if (!isHost) return;
     await pauseGame();
     setTempCategories(settings?.categories ?? availableCategories.map(c => c.name));
     setTempDifficulties(settings?.difficulties ?? availableDifficulties.flatMap(d => d.values));
@@ -95,7 +97,6 @@ export default function MultiplayerGameScreen() {
       revealSpeed: tempSpeed,
     });
     setShowSettings(false);
-    await resumeGame();
     await startNextQuestion();
   };
 
@@ -136,6 +137,7 @@ export default function MultiplayerGameScreen() {
   // Another player is changing settings (not us)
   const otherPlayerChangingSettings = status === 'paused' && pausedByName && pausedByName !== selfPlayer?.name;
   const showPausedOverlay = status === 'paused' && !showSettings;
+  const waitingForHostToStart = isPlaying && !currentQuestion && !isLoading && !isHost;
   // Only show overlay for pause states — lobby is handled by the lobby screen
   const showOverlay = (isPlaying && !currentQuestion && !isLoading) || showPausedOverlay;
 
@@ -156,10 +158,22 @@ export default function MultiplayerGameScreen() {
         }
         headerRight={
           <View style={styles.headerButtons}>
-            <Pressable onPress={handleOpenSettings} style={[styles.headerButton, { borderColor }]}>
-              <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>Settings</ThemedText>
-            </Pressable>
-            <Pressable onPress={handleLeave} style={[styles.headerButton, { borderColor }]}>
+            {isHost ? (
+              <Pressable
+                onPress={handleOpenSettings}
+                accessibilityRole="button"
+                accessibilityLabel="Open game settings"
+                testID="game-settings-button"
+                style={[styles.headerButton, { borderColor }]}>
+                <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>Settings</ThemedText>
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={handleLeave}
+              accessibilityRole="button"
+              accessibilityLabel="Leave game"
+              testID="game-leave-button"
+              style={[styles.headerButton, { borderColor }]}>
               <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>Leave</ThemedText>
             </Pressable>
           </View>
@@ -173,6 +187,10 @@ export default function MultiplayerGameScreen() {
         isPlaying={isPlaying}
         isBuzzLocked={isBuzzLocked}
         isSelfLockedOut={isSelfLockedOut}
+        isCurrentPlayerBuzzer={currentBuzzer?.id === selfPlayer?.id}
+        buzzQueuePosition={buzzQueuePosition}
+        allowBuzzQueue
+        canGoNext={isHost}
         buzzerName={currentBuzzer?.name}
         buzzTimerEnd={buzzTimerEnd}
         buzzerAnswer={buzzerAnswer}
@@ -185,15 +203,18 @@ export default function MultiplayerGameScreen() {
         onNext={startNextQuestion}
         overlay={
           showOverlay ? (
-            otherPlayerChangingSettings ? (
+            otherPlayerChangingSettings || waitingForHostToStart ? (
               <View style={[styles.overlay, { backgroundColor: overlayBackground }]}>
                 <ThemedText type="defaultSemiBold" style={[styles.overlayLabel, { color: overlayTextColor }]}>
-                  {pausedByName} is changing game settings...
+                  {waitingForHostToStart ? 'Waiting for host...' : `${pausedByName} is changing game settings...`}
                 </ThemedText>
               </View>
             ) : (
               <Pressable
-                onPress={startNextQuestion}
+                onPress={showPausedOverlay ? resumeGame : startNextQuestion}
+                accessibilityRole="button"
+                accessibilityLabel={showPausedOverlay ? 'Resume game' : 'Start next question'}
+                testID="game-overlay-action"
                 style={({ pressed }) => [
                   styles.overlay,
                   { backgroundColor: overlayBackground, opacity: pressed ? 0.9 : 1 },
@@ -253,11 +274,17 @@ export default function MultiplayerGameScreen() {
             <View style={styles.modalActions}>
               <Pressable
                 onPress={handleCancelSettings}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel settings"
+                testID="game-settings-cancel"
                 style={[styles.secondaryButton, { borderColor }]}>
                 <ThemedText style={{ color: textColor }}>Cancel</ThemedText>
               </Pressable>
               <Pressable
                 onPress={handleApplySettings}
+                accessibilityRole="button"
+                accessibilityLabel="Apply settings and resume"
+                testID="game-settings-apply"
                 style={[styles.applyButton, { backgroundColor: brandColor }]}>
                 <ThemedText style={styles.applyLabel}>Apply & Resume</ThemedText>
               </Pressable>

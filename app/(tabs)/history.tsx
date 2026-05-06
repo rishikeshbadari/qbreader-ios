@@ -98,6 +98,8 @@ export default function HistoryScreen() {
                 <Pressable
                   onPress={() => setActiveFilter(null)}
                   accessibilityRole="button"
+                  accessibilityLabel="Back to session stats"
+                  testID="history-back"
                   style={({ pressed }) => [
                     styles.backButton,
                     { opacity: pressed ? 0.6 : 1 },

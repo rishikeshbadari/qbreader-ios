@@ -22,6 +22,7 @@ export default function JoinGameScreen() {
 
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
+  const surfaceColor = useThemeColor({}, 'surface');
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
   const errorColor = useThemeColor({}, 'error');
@@ -79,12 +80,14 @@ export default function JoinGameScreen() {
           </View>
 
           {/* Name input */}
-          <View style={styles.section}>
+          <View style={[styles.section, { borderColor, backgroundColor: surfaceColor }]}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>Your Name</ThemedText>
             <TextInput
               placeholder="Player"
               placeholderTextColor={mutedColor}
-              style={[styles.input, { borderColor, color: textColor }]}
+              accessibilityLabel="Your player name"
+              testID="join-name-input"
+              style={[styles.input, { borderColor, color: textColor, backgroundColor: surfaceColor }]}
               value={name}
               onChangeText={setName}
               returnKeyType="next"
@@ -92,12 +95,14 @@ export default function JoinGameScreen() {
           </View>
 
           {/* Game code input */}
-          <View style={styles.section}>
+          <View style={[styles.section, { borderColor, backgroundColor: surfaceColor }]}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>Game Code</ThemedText>
             <TextInput
               placeholder="ABC123"
               placeholderTextColor={mutedColor}
-              style={[styles.codeInput, { borderColor, color: textColor }]}
+              accessibilityLabel="Game code"
+              testID="join-code-input"
+              style={[styles.codeInput, { borderColor, color: textColor, backgroundColor: surfaceColor }]}
               value={gameCode}
               onChangeText={(text) => setGameCode(text.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
               autoCapitalize="characters"
@@ -114,6 +119,10 @@ export default function JoinGameScreen() {
         <Pressable
           onPress={handleJoin}
           disabled={isJoining || gameCode.length < 6}
+          accessibilityRole="button"
+          accessibilityLabel="Join game"
+          accessibilityState={{ disabled: isJoining || gameCode.length < 6 }}
+          testID="join-submit-button"
           style={({ pressed }) => [
             styles.button,
             {
@@ -156,6 +165,9 @@ const styles = StyleSheet.create({
     fontSize: responsiveFont(14),
   },
   section: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(18),
+    padding: spacing.md,
     gap: spacing.sm,
   },
   sectionTitle: {

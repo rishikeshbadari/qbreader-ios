@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npx expo start:*)",
+      "Bash(npx expo install:*)",
+      "Bash(npx expo prebuild:*)",
+      "Bash(xcrun simctl:*)",
+      "Bash(idb:*)",
+      "Bash(idb_companion:*)",
+      "Bash(pgrep:*)",
+      "Bash(pkill:*)",
+      "Bash(lsof:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git stash:*)",
+      "Bash(git show:*)"
+    ],
+    "deny": [
+      "Bash(npx expo run:*)",
+      "Bash(expo run:*)",
+      "Bash(rm -rf:*)",
+      "Bash(npm install:*)",
+      "Bash(yarn install:*)",
+      "Bash(pnpm install:*)",
+      "Edit(ios/**)",
+      "Edit(android/**)",
+      "Write(ios/**)",
+      "Write(android/**)"
+    ]
+  }
+}

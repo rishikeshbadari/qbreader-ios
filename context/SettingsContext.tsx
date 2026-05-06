@@ -12,6 +12,8 @@ import {
 
 import {
   fetchFilterOptions,
+  getAvailableCategories,
+  getAvailableDifficulties,
   type CategoryOption,
   type DifficultyOption,
 } from '@/services/qbreader';
@@ -38,12 +40,61 @@ type SettingsContextValue = {
 
 const SettingsContext = createContext<SettingsContextValue | undefined>(undefined);
 const SETTINGS_STORAGE_KEY = 'quizbowl:settings';
+const DEFAULT_REVEAL_SPEED = 0.5;
+
+type PersistedSettings = {
+  difficulties?: number[];
+  categories?: string[];
+  revealSpeed?: number;
+};
+
+function clampRevealSpeed(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+function isPersistedSettings(value: unknown): value is PersistedSettings {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as PersistedSettings;
+  const hasValidDifficulties =
+    candidate.difficulties === undefined ||
+    (
+      Array.isArray(candidate.difficulties) &&
+      candidate.difficulties.every((difficulty) => typeof difficulty === 'number')
+    );
+  const hasValidCategories =
+    candidate.categories === undefined ||
+    (
+      Array.isArray(candidate.categories) &&
+      candidate.categories.every((category) => typeof category === 'string')
+    );
+  const hasValidRevealSpeed =
+    candidate.revealSpeed === undefined ||
+    (typeof candidate.revealSpeed === 'number' && Number.isFinite(candidate.revealSpeed));
+
+  return hasValidDifficulties && hasValidCategories && hasValidRevealSpeed;
+}
+
+function parsePersistedSettings(stored: string): PersistedSettings {
+  const parsed = JSON.parse(stored) as unknown;
+  return isPersistedSettings(parsed) ? parsed : {};
+}
 
 export function SettingsProvider({ children }: PropsWithChildren) {
-  const [availableDifficulties, setAvailableDifficulties] = useState<DifficultyOption[]>([]);
-  const [availableCategories, setAvailableCategories] = useState<CategoryOption[]>([]);
-  const [selectedDifficulties, setSelectedDifficulties] = useState<number[]>([]);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [availableDifficulties, setAvailableDifficulties] = useState<DifficultyOption[]>(
+    () => getAvailableDifficulties()
+  );
+  const [availableCategories, setAvailableCategories] = useState<CategoryOption[]>(
+    () => getAvailableCategories()
+  );
+  const [selectedDifficulties, setSelectedDifficulties] = useState<number[]>(
+    () => getAvailableDifficulties().flatMap((option) => option.values)
+  );
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(
+    () => getAvailableCategories().map((option) => option.name)
+  );
   const [revealSpeed, setRevealSpeedState] = useState(0.5);
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [loadError, setLoadError] = useState<string>();
@@ -66,24 +117,16 @@ export function SettingsProvider({ children }: PropsWithChildren) {
     }));
   }, []);
 
-  const persistedSelectionsRef = useRef<{
-    difficulties?: number[];
-    categories?: string[];
-    revealSpeed?: number;
-  }>({});
+  const persistedSelectionsRef = useRef<PersistedSettings>({});
   const [storageReady, setStorageReady] = useState(false);
+  const [defaultsReady, setDefaultsReady] = useState(false);
 
   useEffect(() => {
     const loadStoredSelections = async () => {
       try {
         const stored = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
         if (stored) {
-          const parsed = JSON.parse(stored) as {
-            difficulties?: number[];
-            categories?: string[];
-            revealSpeed?: number;
-          };
-          persistedSelectionsRef.current = parsed ?? {};
+          persistedSelectionsRef.current = parsePersistedSettings(stored);
         }
       } catch (error) {
         console.error('Failed to load stored settings', error);
@@ -144,9 +187,10 @@ export function SettingsProvider({ children }: PropsWithChildren) {
       const persistedSpeed = persisted?.revealSpeed;
       const nextSpeed =
         typeof persistedSpeed === 'number' && Number.isFinite(persistedSpeed)
-          ? Math.min(1, Math.max(0, persistedSpeed))
-          : 0.5;
+          ? clampRevealSpeed(persistedSpeed)
+          : DEFAULT_REVEAL_SPEED;
       setRevealSpeedState(nextSpeed);
+      setDefaultsReady(true);
     },
     [clearSelectionError]
   );
@@ -154,6 +198,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
   const loadOptions = useCallback(async () => {
     setLoadingOptions(true);
     setLoadError(undefined);
+    setDefaultsReady(false);
 
     try {
       const { difficulties, categories } = await fetchFilterOptions();
@@ -180,7 +225,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!storageReady) {
+    if (!storageReady || !defaultsReady) {
       return;
     }
     persistedSelectionsRef.current = {
@@ -204,7 +249,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
         clearTimeout(persistTimerRef.current);
       }
     };
-  }, [revealSpeed, selectedCategories, selectedDifficulties, storageReady]);
+  }, [defaultsReady, revealSpeed, selectedCategories, selectedDifficulties, storageReady]);
 
   const toggleDifficulty = useCallback(
     (values: number[]) => {
@@ -260,8 +305,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
   }, [availableCategories, clearSelectionError]);
 
   const setRevealSpeed = useCallback((value: number) => {
-    const clamped = Math.min(1, Math.max(0, value));
-    setRevealSpeedState(clamped);
+    setRevealSpeedState(clampRevealSpeed(value));
   }, []);
 
   const value = useMemo<SettingsContextValue>(

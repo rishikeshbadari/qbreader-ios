@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/ThemedText';
 import { useThemeColor } from '@/hooks/useThemeColor';
-import { responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
+import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 export interface ChipOption {
   label: string;
@@ -117,9 +117,11 @@ const styles = StyleSheet.create({
   },
   chip: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: scale(8),
-    paddingHorizontal: spacing.sm,
-    paddingVertical: verticalScale(6),
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: verticalScale(7),
+    minHeight: MIN_TOUCH_TARGET - scale(8),
+    justifyContent: 'center',
   },
   chipLabel: {
     fontSize: responsiveFont(13),

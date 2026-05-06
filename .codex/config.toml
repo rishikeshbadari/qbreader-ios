@@ -1,0 +1,15 @@
+[mcp_servers.ios-simulator]
+args = [
+    "-y",
+    "ios-simulator-mcp@latest",
+]
+command = "npx"
+
+[mcp_servers.ios-simulator.tools.ui_tap]
+approval_mode = "approve"
+
+[mcp_servers.ios-simulator.tools.ui_type]
+approval_mode = "approve"
+
+[mcp_servers.ios-simulator.tools.ui_swipe]
+approval_mode = "approve"

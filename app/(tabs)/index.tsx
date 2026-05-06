@@ -1,7 +1,7 @@
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { QuizGameLayout } from '@/components/quiz/QuizGameLayout';
@@ -119,6 +119,15 @@ export default function PlayScreen() {
           showPlayOverlay ? (
             <Pressable
               onPress={handlePlayOverlayPress}
+              accessibilityRole="button"
+              accessibilityLabel={
+                playState === 'paused'
+                  ? 'Continue play'
+                  : playState === 'active'
+                    ? 'Load next question'
+                    : 'Start playing'
+              }
+              testID="play-overlay-action"
               style={({ pressed }) => [
                 styles.playOverlay,
                 { backgroundColor: overlayBackground, opacity: pressed ? 0.9 : 1 },

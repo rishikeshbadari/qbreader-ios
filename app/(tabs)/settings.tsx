@@ -1,4 +1,6 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -9,6 +11,12 @@ import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
+import { useMultiplayer } from '@/context/MultiplayerContext';
+import {
+  isPlaytestPeerActive,
+  startPlaytestPeer,
+  stopPlaytestPeer,
+} from '@/services/multiplayer/playtest-peer';
 import { responsiveFont, scale, spacing, verticalScale, deviceMetrics } from '@/utils/responsive';
 
 // Dynamic spacing based on screen height
@@ -42,6 +50,36 @@ export default function SettingsScreen() {
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
   const errorColor = useThemeColor({}, 'error');
+  const { sessionId } = useMultiplayer();
+  const [peerActive, setPeerActive] = useState(isPlaytestPeerActive());
+
+  const handleResetState = () => {
+    Alert.alert('Reset all state?', 'Clears AsyncStorage and reloads. Used by /playtest.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Reset',
+        style: 'destructive',
+        onPress: async () => {
+          await AsyncStorage.clear();
+          Alert.alert('Cleared', 'Reload the app (R,R in Metro) to apply.');
+        },
+      },
+    ]);
+  };
+
+  const handleTogglePeer = async () => {
+    if (peerActive) {
+      await stopPlaytestPeer();
+      setPeerActive(false);
+      return;
+    }
+    if (!sessionId) {
+      Alert.alert('No session', 'Host or join a multiplayer game first.');
+      return;
+    }
+    await startPlaytestPeer(sessionId);
+    setPeerActive(true);
+  };
 
   const revealSpeedLabel =
     revealSpeed >= 0.95
@@ -118,7 +156,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* Reveal Speed */}
-        <ThemedView style={styles.section}>
+        <ThemedView lightColor={Colors.light.surface} darkColor={Colors.dark.surface} style={[styles.section, { borderColor }]}>
           <View style={styles.sectionHeader}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>Reveal Speed</ThemedText>
             <ThemedText style={[styles.speedLabel, { color: mutedColor }]}>
@@ -139,7 +177,7 @@ export default function SettingsScreen() {
         </ThemedView>
 
         {loadError ? (
-          <ThemedView style={[styles.section, styles.errorCard, { borderColor }]}>
+          <ThemedView lightColor={Colors.light.surface} darkColor={Colors.dark.surface} style={[styles.section, styles.errorCard, { borderColor }]}>
             <ThemedText type="defaultSemiBold" style={[styles.errorText, { color: errorColor }]}>
               {loadError}
             </ThemedText>
@@ -150,7 +188,7 @@ export default function SettingsScreen() {
         ) : null}
 
         {/* Difficulty */}
-        <ThemedView style={styles.section}>
+        <ThemedView lightColor={Colors.light.surface} darkColor={Colors.dark.surface} style={[styles.section, { borderColor }]}>
           <View style={styles.sectionHeader}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>Difficulty</ThemedText>
             <Pressable onPress={selectAllDifficulties} hitSlop={8}>
@@ -170,7 +208,7 @@ export default function SettingsScreen() {
         </ThemedView>
 
         {/* Categories */}
-        <ThemedView style={styles.section}>
+        <ThemedView lightColor={Colors.light.surface} darkColor={Colors.dark.surface} style={[styles.section, { borderColor }]}>
           <View style={styles.sectionHeader}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>Categories</ThemedText>
             <Pressable onPress={selectAllCategories} hitSlop={8}>
@@ -194,6 +232,35 @@ export default function SettingsScreen() {
             <ActivityIndicator size="small" />
             <ThemedText style={styles.loadingLabel}>Refreshing…</ThemedText>
           </View>
+        ) : null}
+
+        {process.env.EXPO_PUBLIC_USE_PAIRED_LOOPBACK === '1' ? (
+          <ThemedView lightColor={Colors.light.surface} darkColor={Colors.dark.surface} style={[styles.section, { borderColor }]}>
+            <View style={styles.sectionHeader}>
+              <ThemedText type="subtitle" style={styles.sectionTitle}>Dev Tools</ThemedText>
+            </View>
+            <Pressable
+              onPress={handleResetState}
+              accessibilityLabel="Reset all app state"
+              testID="dev-reset-state"
+              style={[styles.devButton, { borderColor }]}>
+              <ThemedText type="defaultSemiBold">Reset all state</ThemedText>
+            </Pressable>
+            <Pressable
+              onPress={handleTogglePeer}
+              accessibilityLabel={peerActive ? 'Stop playtest peer' : 'Start playtest peer'}
+              testID="dev-toggle-peer"
+              style={[styles.devButton, { borderColor }]}>
+              <ThemedText type="defaultSemiBold">
+                {peerActive ? 'Stop playtest peer' : 'Start playtest peer'}
+              </ThemedText>
+            </Pressable>
+            <ThemedText style={[styles.devHint, { color: mutedColor }]}>
+              {sessionId
+                ? `Session: ${sessionId.slice(0, 8)}…`
+                : 'No active multiplayer session'}
+            </ThemedText>
+          </ThemedView>
         ) : null}
       </ScrollView>
     </SafeAreaView>
@@ -221,6 +288,7 @@ const styles = StyleSheet.create({
   },
   section: {
     borderRadius: scale(16),
+    borderWidth: StyleSheet.hairlineWidth,
     padding: sectionPadding,
     gap: spacing.sm,
   },
@@ -245,8 +313,8 @@ const styles = StyleSheet.create({
   },
   chip: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: scale(8),
-    paddingHorizontal: spacing.sm,
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
     paddingVertical: chipPaddingV,
   },
   chipLabel: {
@@ -281,5 +349,15 @@ const styles = StyleSheet.create({
     borderRadius: scale(8),
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
+  },
+  devButton: {
+    alignSelf: 'flex-start',
+    borderWidth: scale(1),
+    borderRadius: scale(8),
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  devHint: {
+    fontSize: responsiveFont(12),
   },
 });

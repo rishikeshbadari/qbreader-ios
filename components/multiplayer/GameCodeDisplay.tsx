@@ -12,6 +12,7 @@ export function GameCodeDisplay({ code }: GameCodeDisplayProps) {
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
   const mutedColor = useThemeColor({}, 'muted');
+  const surfaceColor = useThemeColor({}, 'surface');
 
   const handleCopy = async () => {
     if (!code) return;
@@ -29,7 +30,7 @@ export function GameCodeDisplay({ code }: GameCodeDisplayProps) {
 
   if (!code) {
     return (
-      <View style={[styles.container, { borderColor }]}>
+      <View style={[styles.container, { borderColor, backgroundColor: surfaceColor }]}>
         <ThemedText style={[styles.label, { color: mutedColor }]}>
           Generating game code...
         </ThemedText>
@@ -38,7 +39,7 @@ export function GameCodeDisplay({ code }: GameCodeDisplayProps) {
   }
 
   return (
-    <View style={[styles.container, { borderColor }]}>
+    <View style={[styles.container, { borderColor, backgroundColor: surfaceColor }]}>
       <ThemedText style={[styles.label, { color: mutedColor }]}>Game Code</ThemedText>
       <ThemedText style={styles.code}>{code}</ThemedText>
       <View style={styles.actions}>
@@ -60,8 +61,8 @@ export function GameCodeDisplay({ code }: GameCodeDisplayProps) {
 const styles = StyleSheet.create({
   container: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: scale(12),
-    padding: spacing.md,
+    borderRadius: scale(18),
+    padding: spacing.lg,
     alignItems: 'center',
     gap: spacing.sm,
   },

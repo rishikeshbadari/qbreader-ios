@@ -16,6 +16,7 @@ export default function MultiplayerTab() {
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
   const mutedColor = useThemeColor({}, 'muted');
+  const surfaceColor = useThemeColor({}, 'surface');
 
   const actions = [
     {
@@ -51,9 +52,10 @@ export default function MultiplayerTab() {
                 styles.actionCard,
                 {
                   borderColor,
-                  backgroundColor: action.primary ? brandColor : undefined,
+                  backgroundColor: action.primary ? brandColor : surfaceColor,
                   opacity: pressed ? 0.85 : 1,
                 },
+                action.primary && styles.primaryCard,
               ]}>
               <ThemedText
                 type="defaultSemiBold"
@@ -77,7 +79,10 @@ export default function MultiplayerTab() {
           onPress={() => router.push('/multiplayer/rules')}
           accessibilityRole="button"
           accessibilityLabel="How to Play"
-          style={({ pressed }) => [styles.rulesLink, { opacity: pressed ? 0.6 : 1 }]}>
+          style={({ pressed }) => [
+            styles.rulesLink,
+            { borderColor, backgroundColor: surfaceColor, opacity: pressed ? 0.7 : 1 },
+          ]}>
           <ThemedText style={[styles.rulesLinkText, { color: brandColor }]}>
             How to Play
           </ThemedText>
@@ -107,10 +112,17 @@ const styles = StyleSheet.create({
   },
   actionCard: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: scale(16),
+    borderRadius: scale(20),
     padding: spacing.lg,
     gap: spacing.xs,
     minHeight: MIN_TOUCH_TARGET,
+  },
+  primaryCard: {
+    shadowColor: '#4338CA',
+    shadowOffset: { width: 0, height: verticalScale(8) },
+    shadowOpacity: 0.18,
+    shadowRadius: scale(18),
+    elevation: 3,
   },
   actionTitle: {
     fontSize: responsiveFont(16),
@@ -126,7 +138,10 @@ const styles = StyleSheet.create({
   },
   rulesLink: {
     alignSelf: 'center',
-    paddingVertical: verticalScale(8),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 999,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: verticalScale(9),
   },
   rulesLinkText: {
     fontSize: responsiveFont(15),

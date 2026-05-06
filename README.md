@@ -49,6 +49,18 @@ Join our community of developers creating universal apps.
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
 
+## Dev Tools section in Settings
+
+The Settings tab has a "Dev Tools" section (Reset state, Start/Stop playtest peer) that is **only rendered when Metro is started with `EXPO_PUBLIC_USE_PAIRED_LOOPBACK=1`** — i.e. during an autonomous `/playtest` run. In a normal `npx expo start` session (including Expo Go on your phone), the section is hidden so it can't be confused with production state. The gate lives in [app/(tabs)/settings.tsx](app/(tabs)/settings.tsx) — search for `EXPO_PUBLIC_USE_PAIRED_LOOPBACK`.
+
+If you want the Dev Tools buttons during a manual session, restart Metro with:
+
+```bash
+EXPO_PUBLIC_USE_PAIRED_LOOPBACK=1 EXPO_PUBLIC_QBREADER_MOCK=1 npx expo start --ios
+```
+
+Note that this also switches multiplayer to the in-process `PairedLoopbackTransport`, so cross-device (phone + sim) multiplayer will not work in that mode — use the default start command for real Supabase multiplayer.
+
 ## Architecture overview
 
 - **Routing & layout**: File-based routes under `app/` with a root stack (`app/_layout.tsx`) and tab navigator in `app/(tabs)/`. Multiplayer has its own stack under `app/multiplayer/`.

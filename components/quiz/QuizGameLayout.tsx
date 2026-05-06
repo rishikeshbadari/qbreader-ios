@@ -37,6 +37,10 @@ type Props = {
   isPlaying: boolean;
   isBuzzLocked?: boolean;
   isSelfLockedOut?: boolean; // Player answered wrong — can't buzz but can still watch
+  isCurrentPlayerBuzzer?: boolean;
+  buzzQueuePosition?: number | null;
+  allowBuzzQueue?: boolean;
+  canGoNext?: boolean;
   buzzerName?: string; // Name of player who is currently buzzing (multiplayer)
 
   // Multiplayer buzz state
@@ -84,6 +88,10 @@ export function QuizGameLayout({
   isPlaying,
   isBuzzLocked = false,
   isSelfLockedOut = false,
+  isCurrentPlayerBuzzer,
+  buzzQueuePosition,
+  allowBuzzQueue = false,
+  canGoNext = true,
   buzzerName,
   buzzerAnswer: remoteBuzzerAnswer,
   buzzerResult,
@@ -102,6 +110,7 @@ export function QuizGameLayout({
 }: Props) {
   const [answer, setAnswer] = useState('');
   const [hasBuzzed, setHasBuzzed] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const keyboardAnimatedValue = useRef(new Animated.Value(0)).current;
   const wordIndexRef = useRef(0);
 
@@ -109,22 +118,26 @@ export function QuizGameLayout({
   const insets = useSafeAreaInsets();
   const dangerColor = useThemeColor({}, 'error');
   const brandColor = useThemeColor({}, 'brand');
+  const mutedColor = useThemeColor({}, 'muted');
+  const isBuzzerControlled = isCurrentPlayerBuzzer !== undefined;
+  const activeHasBuzzed = isBuzzerControlled ? isCurrentPlayerBuzzer : hasBuzzed;
+  const isQueued = buzzQueuePosition != null;
 
   // Refs for keyboard handler
-  const stateRef = useRef({ isPlaying, hasBuzzed, result, answer });
-  stateRef.current = { isPlaying, hasBuzzed, result, answer };
+  const stateRef = useRef({ isPlaying, hasBuzzed: activeHasBuzzed, result, answer });
+  stateRef.current = { isPlaying, hasBuzzed: activeHasBuzzed, result, answer };
   const submittedRef = useRef(false);
 
   // Local timer end for the buzzing player (fallback when coordinator's buzzTimerEnd hasn't arrived)
   const [localBuzzEnd, setLocalBuzzEnd] = useState<number | null>(null);
 
   useEffect(() => {
-    if (hasBuzzed) {
+    if (activeHasBuzzed) {
       setLocalBuzzEnd(Date.now() + SCORING.BUZZ_TIMEOUT_SECONDS * 1000);
     } else {
       setLocalBuzzEnd(null);
     }
-  }, [hasBuzzed]);
+  }, [activeHasBuzzed]);
 
   const effectiveTimerEnd = buzzTimerEnd ?? localBuzzEnd;
 
@@ -160,7 +173,7 @@ export function QuizGameLayout({
 
   // Start no-buzz timer when reveal completes (first time only)
   useEffect(() => {
-    if (revealComplete && isPlaying && !hasBuzzed && !isBuzzLocked && !result && onNoBuzzTimeout) {
+    if (revealComplete && isPlaying && !activeHasBuzzed && !isBuzzLocked && !result && onNoBuzzTimeout) {
       // Only start if there's no saved remaining time (i.e. truly first start)
       if (noBuzzPausedRemainingRef.current == null && !noBuzzTimerEnd) {
         setNoBuzzTimerEnd(Date.now() + SCORING.BUZZ_TIMEOUT_SECONDS * 1000);
@@ -170,7 +183,7 @@ export function QuizGameLayout({
         noBuzzPausedRemainingRef.current = null;
       }
     }
-  }, [revealComplete, isPlaying, hasBuzzed, isBuzzLocked, result, onNoBuzzTimeout, noBuzzTimerEnd]);
+  }, [revealComplete, isPlaying, activeHasBuzzed, isBuzzLocked, result, onNoBuzzTimeout, noBuzzTimerEnd]);
 
   // Pause no-buzz timer when someone buzzes; cancel on final result
   useEffect(() => {
@@ -178,14 +191,14 @@ export function QuizGameLayout({
       // Question resolved — cancel entirely
       noBuzzPausedRemainingRef.current = null;
       setNoBuzzTimerEnd(null);
-    } else if (hasBuzzed || isBuzzLocked) {
+    } else if (activeHasBuzzed || isBuzzLocked) {
       // Someone is buzzing — pause by saving remaining time
       if (noBuzzTimerEnd) {
         noBuzzPausedRemainingRef.current = Math.max(0, noBuzzTimerEnd - Date.now());
         setNoBuzzTimerEnd(null);
       }
     }
-  }, [hasBuzzed, isBuzzLocked, result, noBuzzTimerEnd]);
+  }, [activeHasBuzzed, isBuzzLocked, result, noBuzzTimerEnd]);
 
   // No-buzz countdown + auto-trigger
   useEffect(() => {
@@ -221,10 +234,12 @@ export function QuizGameLayout({
       const adjustedHeight = parentHandlesBottomSafeArea
         ? Math.max(0, e.endCoordinates.height - insets.bottom)
         : e.endCoordinates.height;
+      setKeyboardHeight(adjustedHeight);
       keyboardAnimatedValue.setValue(adjustedHeight);
     });
 
     const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
       keyboardAnimatedValue.setValue(0);
     });
 
@@ -248,22 +263,22 @@ export function QuizGameLayout({
 
   // Reset submitted flag when buzz state changes
   useEffect(() => {
-    if (!hasBuzzed) submittedRef.current = false;
-  }, [hasBuzzed]);
+    if (!activeHasBuzzed) submittedRef.current = false;
+  }, [activeHasBuzzed]);
 
   // Reopen buzz overlay when prompted to give a more specific answer
   useEffect(() => {
-    if (promptText && !hasBuzzed && isPlaying && !result) {
+    if (!isBuzzerControlled && promptText && !activeHasBuzzed && isPlaying && !result) {
       setHasBuzzed(true);
       setAnswer('');
       submittedRef.current = false;
       setLocalBuzzEnd(Date.now() + SCORING.BUZZ_TIMEOUT_SECONDS * 1000);
     }
-  }, [promptText, hasBuzzed, isPlaying, result]);
+  }, [isBuzzerControlled, promptText, activeHasBuzzed, isPlaying, result]);
 
   // Auto-submit when buzz timer expires
   useEffect(() => {
-    if (!effectiveTimerEnd || !hasBuzzed || submittedRef.current || result) return;
+    if (!effectiveTimerEnd || !activeHasBuzzed || submittedRef.current || result) return;
 
     const remaining = effectiveTimerEnd - Date.now();
     if (remaining <= 0) {
@@ -272,7 +287,9 @@ export function QuizGameLayout({
       const currentAnswer = stateRef.current.answer;
       void onSubmitAnswer(currentAnswer.trim());
       setAnswer('');
-      setHasBuzzed(false);
+      if (!isBuzzerControlled) {
+        setHasBuzzed(false);
+      }
       return;
     }
 
@@ -282,11 +299,13 @@ export function QuizGameLayout({
       const currentAnswer = stateRef.current.answer;
       void onSubmitAnswer(currentAnswer.trim());
       setAnswer('');
-      setHasBuzzed(false);
+      if (!isBuzzerControlled) {
+        setHasBuzzed(false);
+      }
     }, remaining);
 
     return () => clearTimeout(timer);
-  }, [effectiveTimerEnd, hasBuzzed, result, onSubmitAnswer]);
+  }, [effectiveTimerEnd, activeHasBuzzed, isBuzzerControlled, result, onSubmitAnswer]);
 
   // Broadcast typing to other players
   const handleAnswerChange = (text: string) => {
@@ -296,9 +315,25 @@ export function QuizGameLayout({
 
   // Derived state - hasBuzzed means THIS user buzzed, so show answer input regardless of isBuzzLocked
   // Also keep open during prompt (prevents flicker between handleSubmit and prompt effect)
-  const isAnswering = (hasBuzzed || (!!promptText && !result)) && isPlaying && !result;
+  const isAnswering = (activeHasBuzzed || (!isBuzzerControlled && !!promptText && !result)) && isPlaying && !result;
   const showResult = Boolean(result);
   const showNextButton = showResult;
+  const canBuzz = Boolean(
+    question &&
+    !isLoading &&
+    isPlaying &&
+    !activeHasBuzzed &&
+    !isQueued &&
+    !isSelfLockedOut &&
+    !showNextButton &&
+    (!isBuzzLocked || allowBuzzQueue)
+  );
+  const mainButtonDisabled = showNextButton
+    ? !canGoNext || !question || isLoading || !isPlaying
+    : !canBuzz;
+  const mainActionLabel = showNextButton
+    ? canGoNext ? 'Next' : 'Waiting for Host'
+    : isQueued ? `Queued #${buzzQueuePosition}` : isBuzzLocked && allowBuzzQueue ? 'Join Queue' : 'Buzz';
 
   // Handlers
   const handleWordIndexChange = (index: number) => {
@@ -306,22 +341,27 @@ export function QuizGameLayout({
   };
 
   const handleBuzz = () => {
-    if (!question || isLoading || hasBuzzed || !isPlaying || isBuzzLocked || isSelfLockedOut) return;
-    setHasBuzzed(true);
+    if (!canBuzz) return;
+    if (!isBuzzerControlled && !isBuzzLocked) {
+      setHasBuzzed(true);
+    }
     onBuzz(wordIndexRef.current);
   };
 
   const handleSubmit = async () => {
-    if (!isPlaying || !hasBuzzed || result) return;
+    if (!isPlaying || !activeHasBuzzed || result) return;
     submittedRef.current = true;
     await onSubmitAnswer(answer.trim());
     setAnswer('');
-    setHasBuzzed(false);
+    if (!isBuzzerControlled) {
+      setHasBuzzed(false);
+    }
   };
 
   const handleMainAction = () => {
     Keyboard.dismiss();
     if (showNextButton) {
+      if (!canGoNext) return;
       // Go to next question
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setAnswer('');
@@ -335,6 +375,9 @@ export function QuizGameLayout({
   };
 
   const contentPaddingBottom = spacing.lg + bottomPadding + insets.bottom;
+  const answerBottomOffset = keyboardHeight > 0
+    ? keyboardAnimatedValue
+    : bottomPadding + spacing.md;
 
   return (
     <View style={styles.root}>
@@ -358,7 +401,7 @@ export function QuizGameLayout({
               isLoading={isLoading}
               error={error}
               showAnswer={showResult}
-              isBuzzed={hasBuzzed || isBuzzLocked}
+              isBuzzed={activeHasBuzzed || isBuzzLocked}
               result={result ?? undefined}
               revealActive={isPlaying && !isBuzzLocked}
               revealSpeedOverride={revealSpeed}
@@ -369,7 +412,7 @@ export function QuizGameLayout({
             />
             {overlay}
             {/* Show buzzer name when someone is buzzing / wrong answer flash / prompt */}
-            {buzzerName && isBuzzLocked && !hasBuzzed && !showResult && (
+            {buzzerName && isBuzzLocked && !activeHasBuzzed && !showResult && (
               <View style={[styles.buzzerOverlay, { backgroundColor: colorScheme === 'dark' ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)' }]}>
                 {buzzerResult && !buzzerResult.isCorrect ? (
                   <>
@@ -414,7 +457,7 @@ export function QuizGameLayout({
               </View>
             )}
             {/* No-buzz countdown: question fully revealed, no one buzzed yet */}
-            {noBuzzSeconds != null && noBuzzSeconds > 0 && !hasBuzzed && !isBuzzLocked && !showResult && (
+            {noBuzzSeconds != null && noBuzzSeconds > 0 && !activeHasBuzzed && !isBuzzLocked && !showResult && (
               <View style={[styles.noBuzzOverlay, { backgroundColor: colorScheme === 'dark' ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255, 255, 255, 0.85)' }]}>
                 <ThemedText style={[styles.noBuzzTimer, { color: noBuzzSeconds <= 3 ? dangerColor : brandColor }]}>
                   {noBuzzSeconds}s
@@ -427,16 +470,16 @@ export function QuizGameLayout({
           {/* Action button - Buzz or Next */}
           <Pressable
             onPress={handleMainAction}
-            disabled={!question || isLoading || !isPlaying || (hasBuzzed && !showResult) || (!showNextButton && (isBuzzLocked || isSelfLockedOut))}
+            disabled={mainButtonDisabled}
             style={({ pressed }) => [
               styles.mainButton,
               {
-                backgroundColor: showNextButton ? brandColor : dangerColor,
-                opacity: !question || isLoading ? 0.25 : (hasBuzzed && !showResult) || (!showNextButton && (isBuzzLocked || isSelfLockedOut)) ? 0.6 : pressed ? 0.9 : 1,
+                backgroundColor: mainButtonDisabled ? mutedColor : showNextButton ? brandColor : dangerColor,
+                opacity: mainButtonDisabled ? 0.35 : pressed ? 0.9 : 1,
               },
             ]}>
             <ThemedText type="defaultSemiBold" style={styles.actionLabel}>
-              {showNextButton ? 'Next' : 'Buzz'}
+              {mainActionLabel}
             </ThemedText>
           </Pressable>
 
@@ -460,7 +503,7 @@ export function QuizGameLayout({
             { backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.5)' },
           ]}>
           <Pressable style={styles.answerOverlayTouchable} onPress={Keyboard.dismiss} />
-          <Animated.View style={[styles.answerInputContainer, { marginBottom: keyboardAnimatedValue }]}>
+          <Animated.View style={[styles.answerInputContainer, { marginBottom: answerBottomOffset }]}>
             {/* Prompt hint */}
             {promptText ? (
               <View style={styles.promptHintContainer}>
@@ -516,7 +559,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: spacing.lg,
-    gap: spacing.lg,
+    gap: spacing.md,
   },
   header: {
     flexDirection: 'row',
@@ -526,6 +569,7 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
+    minWidth: 0,
     gap: spacing.xs,
   },
   subtitle: {
@@ -538,7 +582,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   mainButton: {
-    borderRadius: scale(14),
+    borderRadius: scale(16),
     paddingVertical: verticalScale(16),
     alignItems: 'center',
     justifyContent: 'center',

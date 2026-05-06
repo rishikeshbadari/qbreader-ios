@@ -6,14 +6,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
-import { useColorScheme } from '@/hooks/useColorScheme';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 export default function HostGameScreen() {
-  const colorScheme = useColorScheme();
   const insets = useSafeAreaInsets();
   const { hostGame } = useMultiplayer();
   const { availableCategories, availableDifficulties, revealSpeed, loadingOptions } = useSettings();
@@ -35,6 +33,7 @@ export default function HostGameScreen() {
 
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
+  const surfaceColor = useThemeColor({}, 'surface');
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
   const errorColor = useThemeColor({}, 'error');
@@ -50,7 +49,14 @@ export default function HostGameScreen() {
     if (availableCategories.length > 0 && selectedCategories.length === 0) {
       setSelectedCategories(allCategories);
     }
-  }, [allCategories, allDifficulties, availableCategories.length, availableDifficulties.length]);
+  }, [
+    allCategories,
+    allDifficulties,
+    availableCategories.length,
+    availableDifficulties.length,
+    selectedCategories.length,
+    selectedDifficulties.length,
+  ]);
 
   const toggleDifficulty = (values: number[]) => {
     const isSelected = values.every(v => selectedDifficulties.includes(v));
@@ -116,19 +122,21 @@ export default function HostGameScreen() {
         </View>
 
         {/* Name input */}
-        <View style={styles.section}>
+        <View style={[styles.section, { borderColor, backgroundColor: surfaceColor }]}>
           <ThemedText type="subtitle" style={styles.sectionTitle}>Your Name</ThemedText>
           <TextInput
             placeholder="Player"
             placeholderTextColor={mutedColor}
-            style={[styles.input, { borderColor, color: textColor }]}
+            accessibilityLabel="Your player name"
+            testID="host-name-input"
+            style={[styles.input, { borderColor, color: textColor, backgroundColor: surfaceColor }]}
             value={name}
             onChangeText={setName}
           />
         </View>
 
         {/* Difficulty */}
-        <View style={styles.section}>
+        <View style={[styles.section, { borderColor, backgroundColor: surfaceColor }]}>
           <View style={styles.sectionHeader}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>Difficulty</ThemedText>
             <Pressable onPress={() => setSelectedDifficulties(allDifficulties)} hitSlop={8}>
@@ -145,6 +153,10 @@ export default function HostGameScreen() {
                   <Pressable
                     key={option.label}
                     onPress={() => toggleDifficulty(option.values)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${option.label} difficulty`}
+                    accessibilityState={{ selected: isSelected }}
+                    testID={`host-difficulty-${option.label}`}
                     style={[styles.chip, { borderColor, backgroundColor: isSelected ? brandColor : 'transparent' }]}>
                     <ThemedText style={[styles.chipLabel, { color: isSelected ? '#fff' : textColor }]}>
                       {option.label}
@@ -157,7 +169,7 @@ export default function HostGameScreen() {
         </View>
 
         {/* Categories */}
-        <View style={styles.section}>
+        <View style={[styles.section, { borderColor, backgroundColor: surfaceColor }]}>
           <View style={styles.sectionHeader}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>Categories</ThemedText>
             <Pressable onPress={() => setSelectedCategories(allCategories)} hitSlop={8}>
@@ -174,6 +186,10 @@ export default function HostGameScreen() {
                   <Pressable
                     key={category.name}
                     onPress={() => toggleCategory(category.name)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${category.name} category`}
+                    accessibilityState={{ selected: isSelected }}
+                    testID={`host-category-${category.name}`}
                     style={[styles.chip, { borderColor, backgroundColor: isSelected ? brandColor : 'transparent' }]}>
                     <ThemedText style={[styles.chipLabel, { color: isSelected ? '#fff' : textColor }]}>
                       {category.name}
@@ -186,7 +202,7 @@ export default function HostGameScreen() {
         </View>
 
         {/* Reveal Speed */}
-        <View style={styles.section}>
+        <View style={[styles.section, { borderColor, backgroundColor: surfaceColor }]}>
           <View style={styles.sectionHeader}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>Reveal Speed</ThemedText>
             <ThemedText style={[styles.speedLabel, { color: mutedColor }]}>{speedLabel}</ThemedText>
@@ -211,8 +227,13 @@ export default function HostGameScreen() {
       <Pressable
         onPress={handleStart}
         disabled={isStarting || loadingOptions}
+        accessibilityRole="button"
+        accessibilityLabel="Start hosting game"
+        accessibilityState={{ disabled: isStarting || loadingOptions }}
+        testID="host-start-button"
         style={({ pressed }) => [
           styles.button,
+          { marginBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) },
           { backgroundColor: brandColor, opacity: isStarting || loadingOptions ? 0.5 : pressed ? 0.8 : 1 },
         ]}>
         <ThemedText type="defaultSemiBold" style={styles.buttonLabel}>
@@ -250,6 +271,9 @@ const styles = StyleSheet.create({
     fontSize: responsiveFont(14),
   },
   section: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(18),
+    padding: spacing.md,
     gap: spacing.sm,
   },
   sectionHeader: {
@@ -279,9 +303,9 @@ const styles = StyleSheet.create({
   },
   chip: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: scale(8),
-    paddingHorizontal: spacing.sm,
-    paddingVertical: verticalScale(6),
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: verticalScale(7),
   },
   chipLabel: {
     fontSize: responsiveFont(13),

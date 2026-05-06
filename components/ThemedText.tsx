@@ -37,20 +37,22 @@ export function ThemedText({
 const styles = StyleSheet.create({
   default: {
     fontSize: responsiveFont(16),
-    lineHeight: responsiveFont(24),
+    lineHeight: responsiveFont(23),
   },
   defaultSemiBold: {
     fontSize: responsiveFont(16),
-    lineHeight: responsiveFont(24),
+    lineHeight: responsiveFont(23),
     fontWeight: '600',
   },
   title: {
-    fontSize: responsiveFont(32),
-    fontWeight: 'bold',
-    lineHeight: responsiveFont(32),
+    fontSize: responsiveFont(31),
+    fontWeight: '800',
+    lineHeight: responsiveFont(38),
+    letterSpacing: -0.6,
   },
   subtitle: {
     fontSize: responsiveFont(20),
+    lineHeight: responsiveFont(26),
     fontWeight: 'bold',
   },
   link: {

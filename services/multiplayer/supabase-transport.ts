@@ -64,18 +64,26 @@ export class SupabaseTransport implements MultiplayerTransport {
     this.playerName = playerNames;
 
     // Generate a unique game code
-    let code: string;
-    let attempts = 0;
-    do {
-      code = generateCode();
-      const { data } = await this.supabase
+    let code: string | null = null;
+    for (let attempts = 0; attempts < 10; attempts++) {
+      const candidateCode = generateCode();
+      const { data, error } = await this.supabase
         .from('rooms')
         .select('code')
-        .eq('code', code)
+        .eq('code', candidateCode)
         .maybeSingle();
-      if (!data) break;
-      attempts++;
-    } while (attempts < 10);
+      if (error) {
+        throw new Error(`Failed to verify room code: ${error.message}`);
+      }
+      if (!data) {
+        code = candidateCode;
+        break;
+      }
+    }
+
+    if (!code) {
+      throw new Error('Unable to allocate a unique game code. Please try again.');
+    }
 
     // Register room in database
     const { error } = await this.supabase
@@ -86,7 +94,14 @@ export class SupabaseTransport implements MultiplayerTransport {
     this.sessionId = code;
 
     // Subscribe to Realtime channel — wait for confirmation before proceeding
-    await this.subscribeToChannel(code);
+    try {
+      await this.subscribeToChannel(code);
+    } catch (error) {
+      await this.supabase.from('rooms').delete().eq('code', code);
+      this.sessionId = null;
+      this.isHost = false;
+      throw error;
+    }
 
     this.serverCallbacks?.onRoomCreated?.(code);
     this.serverCallbacks?.onConnectionStatusChange?.('connected');
@@ -101,11 +116,14 @@ export class SupabaseTransport implements MultiplayerTransport {
     this.callbacks = callbacks;
 
     // Verify room exists
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('rooms')
       .select('code')
       .eq('code', code)
       .maybeSingle();
+    if (error) {
+      throw new Error(`Failed to verify room: ${error.message}`);
+    }
     if (!data) throw new Error('Room not found');
 
     this.sessionId = code;
@@ -170,6 +188,14 @@ export class SupabaseTransport implements MultiplayerTransport {
 
   private subscribeToChannel(code: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const settle = (callback: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        callback();
+      };
+
       this.channel = this.supabase.channel(`game:${code}`, {
         config: { broadcast: { self: false } },
       });
@@ -202,23 +228,30 @@ export class SupabaseTransport implements MultiplayerTransport {
       });
 
       const timeout = setTimeout(() => {
-        reject(new Error('Channel subscription timed out'));
+        settle(() => {
+          this.serverCallbacks?.onConnectionStatusChange?.('disconnected');
+          reject(new Error('Channel subscription timed out'));
+        });
       }, 10_000);
 
       this.channel.subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          clearTimeout(timeout);
-          if (this.playerId) {
-            await this.channel!.track({
-              playerId: this.playerId,
-              playerName: this.playerName ?? 'Player',
-            });
+          try {
+            if (this.playerId) {
+              await this.channel!.track({
+                playerId: this.playerId,
+                playerName: this.playerName ?? 'Player',
+              });
+            }
+            settle(resolve);
+          } catch (error) {
+            settle(() => reject(error instanceof Error ? error : new Error('Presence tracking failed')));
           }
-          resolve();
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-          clearTimeout(timeout);
-          this.serverCallbacks?.onConnectionStatusChange?.('disconnected');
-          reject(new Error(`Channel subscription failed: ${status}`));
+          settle(() => {
+            this.serverCallbacks?.onConnectionStatusChange?.('disconnected');
+            reject(new Error(`Channel subscription failed: ${status}`));
+          });
         }
       });
     });

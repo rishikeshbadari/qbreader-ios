@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
-import { useColorScheme } from '@/hooks/useColorScheme';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { SCORING, type GameSummary } from '@/types/multiplayer';
@@ -78,7 +77,6 @@ function buzzLabel(buzz: { isPower?: boolean; timedOut?: boolean }): string | nu
 }
 
 export default function MultiplayerSummaryScreen() {
-  const colorScheme = useColorScheme();
   const insets = useSafeAreaInsets();
   const { summary } = useMultiplayer();
   const router = useRouter();
@@ -91,6 +89,8 @@ export default function MultiplayerSummaryScreen() {
   const errorColor = useThemeColor({}, 'error');
 
   const handleDone = () => router.replace('/(tabs)/multiplayer');
+  const playerNames = summary?.players.map(p => p.name).join(', ') ?? '';
+  const scores = useMemo(() => summary ? computeScores(summary) : [], [summary]);
 
   // Auto-save to match history
   const savedRef = useRef(false);
@@ -106,7 +106,7 @@ export default function MultiplayerSummaryScreen() {
       <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
         <ThemedText type="title">No Game Data</ThemedText>
           <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
-            There's no game summary to display.
+            There is no game summary to display.
           </ThemedText>
           <Pressable
             onPress={handleDone}
@@ -116,9 +116,6 @@ export default function MultiplayerSummaryScreen() {
       </ThemedView>
     );
   }
-
-  const playerNames = summary.players.map(p => p.name).join(', ');
-  const scores = useMemo(() => computeScores(summary), [summary]);
 
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
@@ -216,7 +213,7 @@ export default function MultiplayerSummaryScreen() {
                           </ThemedText>
                         ) : null}
                         <ThemedText style={[styles.buzzAnswer, { color: mutedColor }]}>
-                          "{buzz.answer || '(no answer)'}"
+                          {buzz.answer ? `“${buzz.answer}”` : '(no answer)'}
                         </ThemedText>
                       </View>
                     );
@@ -230,6 +227,9 @@ export default function MultiplayerSummaryScreen() {
 
       <Pressable
         onPress={handleDone}
+        accessibilityRole="button"
+        accessibilityLabel="Done with summary"
+        testID="summary-done-button"
         style={({ pressed }) => [
           styles.button,
           { backgroundColor: brandColor, opacity: pressed ? 0.8 : 1 },

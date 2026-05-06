@@ -7,8 +7,8 @@ import type { AnswerResult, Tossup } from '@/types/qb';
 export const SCORING = {
   CORRECT: 10,
   POWER: 15,
-  INCORRECT: -5,
-  BUZZ_TIMEOUT_SECONDS: 8,
+  INCORRECT: 0,
+  BUZZ_TIMEOUT_SECONDS: 10,
   WRONG_ANSWER_DISPLAY_MS: 1500,
 } as const;
 
@@ -98,6 +98,7 @@ export type StateSyncPayload = {
   powerMarkWordIndex?: number;
   scores: Record<string, number>;
   lockedOutPlayers: string[];
+  buzzQueue?: string[];
   questionRecords: QuestionRecord[];
   gameCode?: string;
   readyPlayers?: string[];
@@ -126,7 +127,9 @@ export type GameEvent =
   | { type: 'question:preload'; tossup: Tossup; powerMarkWordIndex?: number }
   | { type: 'question:reveal'; revealStartTime: number }
   | { type: 'question:request' }
-  | { type: 'buzz:lock'; playerId: string }
+  | { type: 'buzz:request'; playerId: string; wordIndex?: number; timestamp: number }
+  | { type: 'buzz:lock'; playerId: string; wordIndex?: number; queuedPlayerIds?: string[] }
+  | { type: 'buzz:queue'; playerIds: string[] }
   | { type: 'buzz:unlock'; lockedOutPlayers: string[]; allLockedOut?: boolean; lastResult?: AnswerResult }
   | { type: 'buzz:submit'; buzz: Buzz }
   | { type: 'buzz:result'; buzz: Buzz; scores?: Record<string, number> }

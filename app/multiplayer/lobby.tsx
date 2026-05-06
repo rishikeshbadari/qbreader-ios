@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Alert, Animated, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -37,8 +37,8 @@ export default function LobbyScreen() {
 
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
+  const surfaceColor = useThemeColor({}, 'surface');
   const mutedColor = useThemeColor({}, 'muted');
-  const errorColor = useThemeColor({}, 'error');
 
   const isSelfReady = selfPlayer ? readyPlayers.includes(selfPlayer.id) : false;
   const readyCount = readyPlayers.length;
@@ -138,6 +138,9 @@ export default function LobbyScreen() {
         <View style={styles.headerRow}>
           <Pressable
             onPress={handleLeave}
+            accessibilityRole="button"
+            accessibilityLabel="Leave game"
+            testID="lobby-leave"
             style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.6 : 1 }]}>
             <ThemedText style={styles.backLabel}>&#8249; Leave</ThemedText>
           </Pressable>
@@ -154,7 +157,7 @@ export default function LobbyScreen() {
       </View>
 
       {/* Player List */}
-      <View style={[styles.playerSection, { borderColor }]}>
+      <View style={[styles.playerSection, { borderColor, backgroundColor: surfaceColor }]}>
         <ThemedText type="subtitle" style={styles.sectionTitle}>Players</ThemedText>
         <FlatList
           data={players}
@@ -166,7 +169,9 @@ export default function LobbyScreen() {
                   handleTransferHost(item.id, item.name);
                 }
               }}
-              delayLongPress={500}>
+              delayLongPress={500}
+              accessibilityLabel={`Player ${item.name}${isHost && item.id !== selfPlayer?.id ? ' (long press to transfer host)' : ''}`}
+              testID={`player-row-${item.id}`}>
               <PlayerListItem
                 name={item.name}
                 color={playerColors[item.id] ?? '#888'}
@@ -186,7 +191,7 @@ export default function LobbyScreen() {
 
       {/* Settings Summary */}
       {settings && (
-        <View style={styles.settingsSection}>
+        <View style={[styles.settingsSection, { borderColor, backgroundColor: surfaceColor }]}>
           <ThemedText type="subtitle" style={styles.sectionTitle}>Settings</ThemedText>
           <View style={styles.settingsRow}>
             <ThemedText style={[styles.settingsLabel, { color: mutedColor }]}>Difficulties</ThemedText>
@@ -214,6 +219,10 @@ export default function LobbyScreen() {
             <Pressable
               onPress={startGameCountdown}
               disabled={!canStart}
+              accessibilityRole="button"
+              accessibilityLabel="Start game"
+              accessibilityState={{ disabled: !canStart }}
+              testID="lobby-start-game"
               style={({ pressed }) => [
                 styles.startButton,
                 {
@@ -239,6 +248,10 @@ export default function LobbyScreen() {
         ) : (
           <Pressable
             onPress={toggleReady}
+            accessibilityRole="button"
+            accessibilityLabel={isSelfReady ? 'Mark not ready' : 'Mark ready'}
+            accessibilityState={{ selected: isSelfReady }}
+            testID="lobby-ready-toggle"
             style={({ pressed }) => [
               styles.readyButton,
               {
@@ -271,8 +284,10 @@ const styles = StyleSheet.create({
   },
   countdownNumber: {
     fontSize: responsiveFont(96),
+    lineHeight: responsiveFont(112),
     fontWeight: '900',
     textAlign: 'center',
+    width: scale(120),
   },
   countdownLabel: {
     fontSize: responsiveFont(18),
@@ -303,7 +318,10 @@ const styles = StyleSheet.create({
   },
   playerSection: {
     flex: 1,
-    paddingHorizontal: spacing.lg,
+    marginHorizontal: spacing.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(18),
+    padding: spacing.md,
     gap: spacing.xs,
   },
   sectionTitle: {
@@ -313,8 +331,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   settingsSection: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+    marginHorizontal: spacing.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(18),
+    padding: spacing.md,
     gap: spacing.xs,
   },
   settingsRow: {

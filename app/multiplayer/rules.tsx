@@ -11,15 +11,15 @@ import { responsiveFont, scale, spacing, verticalScale, MIN_TOUCH_TARGET } from 
 const RULES = [
   {
     title: 'Buzzing In',
-    body: `Questions are revealed word by word. Tap the buzz button at any point to answer. Once you buzz, no one else can answer until you're done.`,
+    body: 'Questions are revealed word by word. Tap the buzz button at any point to answer. Once you buzz, no one else can answer until you submit or time runs out.',
   },
   {
     title: 'Answering',
-    body: `After buzzing, you have ${SCORING.BUZZ_TIMEOUT_SECONDS} seconds to type your answer and submit. If time runs out, it counts as an incorrect answer.`,
+    body: `After buzzing, you have ${SCORING.BUZZ_TIMEOUT_SECONDS} seconds to type your answer and submit. If time runs out, you are locked out for the rest of the question.`,
   },
   {
     title: 'Scoring',
-    body: `Correct answer: +${SCORING.CORRECT} points.\nIncorrect answer: ${SCORING.INCORRECT} points.\nPower (correct before the power mark *): +${SCORING.POWER} points.`,
+    body: `Correct answer: +${SCORING.CORRECT} points.\nPower (correct before the power mark *): +${SCORING.POWER} points.\nIncorrect answers: no point penalty.`,
   },
   {
     title: 'Lockouts',
@@ -31,7 +31,7 @@ const RULES = [
   },
   {
     title: 'Settings',
-    body: 'Any player can pause the game at any time to change difficulty, categories, or reveal speed. Other players will see who is changing settings. Changes apply to all players immediately.',
+    body: 'Only the host can pause the game to change difficulty, categories, or reveal speed. Other players will see that settings are being changed.',
   },
   {
     title: 'Leaving & Joining',

@@ -3,6 +3,7 @@ import type { Tossup } from '@/types/qb';
 
 const API_BASE = 'https://www.qbreader.org/api';
 const DEFAULT_TOSSUP_COUNT = 1;
+const MOCK_ENABLED = process.env.EXPO_PUBLIC_QBREADER_MOCK === '1';
 const FALLBACK_CATEGORIES = [
   'Literature',
   'History',
@@ -75,10 +76,20 @@ export type RandomTossupFilters = {
   categories?: string[];
 };
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function createAbortError(): Error {
+  const error = new Error('Request aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
 /**
  * Build the QBReader random tossup URL with optional filters applied.
  */
-function buildRandomTossupUrl(filters?: RandomTossupFilters) {
+function buildRandomTossupUrl(filters?: RandomTossupFilters): string {
   const url = new URL(`${API_BASE}/random-tossup`);
   url.searchParams.set('number', DEFAULT_TOSSUP_COUNT.toString());
 
@@ -95,13 +106,31 @@ function buildRandomTossupUrl(filters?: RandomTossupFilters) {
 
 /**
  * Fetch a single random tossup from QBReader, normalizing the response into the
- * app's Tossup shape.
+ * app's Tossup shape. When EXPO_PUBLIC_QBREADER_MOCK=1, returns a deterministic
+ * fixture instead — used by the /playtest loop so adversarial inputs aren't
+ * confounded by API flake.
  */
 export async function fetchRandomTossup(
   signal?: AbortSignal,
   filters?: RandomTossupFilters
 ): Promise<Tossup> {
-  const response = await fetch(buildRandomTossupUrl(filters), { signal });
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+
+  if (MOCK_ENABLED) {
+    return mockTossup();
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(buildRandomTossupUrl(filters), { signal });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+    throw new Error('Unable to reach QB Reader right now.');
+  }
 
   if (!response.ok) {
     throw new Error('Unable to reach QB Reader right now.');
@@ -118,28 +147,20 @@ export async function fetchRandomTossup(
 }
 
 /**
- * Fetch available difficulty groupings from QBReader.
+ * Return the difficulty groupings used by QBReader tossup filters.
  */
-export async function fetchAvailableDifficulties(): Promise<DifficultyOption[]> {
-  const response = await fetch(`${API_BASE}/db-explorer/set-metadata?includeCounts=false`);
-
-  if (!response.ok) {
-    throw new Error('Unable to load available difficulties.');
-  }
-
-  const payload = (await response.json()) as {
-    data: Array<{ difficulty?: number }>;
-  };
-
-  const values = collectDifficultyValues(payload.data);
-  const grouped = DIFFICULTY_GROUPS.filter((group) =>
-    group.values.some((value) => values.has(value))
-  );
-
-  return (grouped.length > 0 ? grouped : DIFFICULTY_GROUPS).map((group) => ({
+export function getAvailableDifficulties(): DifficultyOption[] {
+  return DIFFICULTY_GROUPS.map((group) => ({
     label: group.label,
     values: group.values,
   }));
+}
+
+/**
+ * Fetch available difficulty groupings.
+ */
+export async function fetchAvailableDifficulties(): Promise<DifficultyOption[]> {
+  return getAvailableDifficulties();
 }
 
 /**
@@ -163,16 +184,6 @@ export async function fetchFilterOptions(): Promise<{
   const difficulties = await fetchAvailableDifficulties();
   const categories = getAvailableCategories();
   return { difficulties, categories };
-}
-
-function collectDifficultyValues(data: Array<{ difficulty?: number }>): Set<number> {
-  const values = new Set<number>();
-  data.forEach((item) => {
-    if (typeof item.difficulty === 'number') {
-      values.add(item.difficulty);
-    }
-  });
-  return values;
 }
 
 function extractTossups(payload: RandomTossupResponse | RawTossup[]): RawTossup[] {
@@ -229,10 +240,68 @@ function normalizeSetName(set?: RawSet | string): string | undefined {
 function normalizePacketNumber(packet?: RawPacket | string): number | undefined {
   const rawNumber =
     typeof packet === 'string' ? Number.parseInt(packet, 10) : packet?.number;
-  return rawNumber && Number.isFinite(rawNumber) ? rawNumber : undefined;
+  return typeof rawNumber === 'number' && Number.isFinite(rawNumber) ? rawNumber : undefined;
 }
 
 function normalizeLabel(value?: string | { name?: string }): string | undefined {
   if (!value) return undefined;
   return typeof value === 'string' ? value : value.name ?? undefined;
+}
+
+// ─── Mock fixtures (used when EXPO_PUBLIC_QBREADER_MOCK=1) ────────────────────
+
+const MOCK_FIXTURES: Tossup[] = [
+  {
+    id: 'mock-1',
+    questionHtml:
+      'This German-born physicist published four landmark papers in 1905, including one introducing special relativity. For 10 points, name this author of E=mc^2.',
+    answerHtml: 'Albert <b>Einstein</b>',
+    question:
+      'This German-born physicist published four landmark papers in 1905, including one introducing special relativity. For 10 points, name this author of E=mc^2.',
+    answer: 'Albert Einstein',
+    category: 'Science',
+    subcategory: 'Physics',
+    difficulty: 3,
+    setName: 'Mock Set',
+    packetNumber: 1,
+    questionNumber: 1,
+  },
+  {
+    id: 'mock-2',
+    questionHtml:
+      'This English playwright wrote a tragedy about a Danish prince contemplating mortality. For 10 points, name this author of Hamlet.',
+    answerHtml: 'William <b>Shakespeare</b>',
+    question:
+      'This English playwright wrote a tragedy about a Danish prince contemplating mortality. For 10 points, name this author of Hamlet.',
+    answer: 'William Shakespeare',
+    category: 'Literature',
+    subcategory: 'British Literature',
+    difficulty: 2,
+    setName: 'Mock Set',
+    packetNumber: 1,
+    questionNumber: 2,
+  },
+  {
+    id: 'mock-3',
+    questionHtml:
+      'This capital city sits on the Seine and is home to the Eiffel Tower. For 10 points, name this French city.',
+    answerHtml: '<b>Paris</b>',
+    question:
+      'This capital city sits on the Seine and is home to the Eiffel Tower. For 10 points, name this French city.',
+    answer: 'Paris',
+    category: 'Geography',
+    subcategory: 'European Geography',
+    difficulty: 1,
+    setName: 'Mock Set',
+    packetNumber: 1,
+    questionNumber: 3,
+  },
+];
+
+let mockIndex = 0;
+
+function mockTossup(): Tossup {
+  const fixture = MOCK_FIXTURES[mockIndex % MOCK_FIXTURES.length];
+  mockIndex += 1;
+  return { ...fixture, id: `${fixture.id}-${mockIndex}` };
 }

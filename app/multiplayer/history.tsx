@@ -11,11 +11,26 @@ import type { GameSummary } from '@/types/multiplayer';
 import { responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 const HISTORY_KEY = 'quizbowl:match_history';
+const MAX_HISTORY_MATCHES = 50;
+
+function parseMatchHistory(raw: string): GameSummary[] {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  return parsed.filter((item): item is GameSummary => (
+    Boolean(item) &&
+    typeof item === 'object' &&
+    typeof (item as GameSummary).sessionId === 'string' &&
+    Array.isArray((item as GameSummary).players) &&
+    Array.isArray((item as GameSummary).questions)
+  ));
+}
 
 export async function saveMatchToHistory(summary: GameSummary): Promise<void> {
   const existing = await loadMatchHistory();
   // Prepend new match, keep max 50
-  const updated = [summary, ...existing].slice(0, 50);
+  const updated = [summary, ...existing].slice(0, MAX_HISTORY_MATCHES);
   await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
 }
 
@@ -23,7 +38,7 @@ export async function loadMatchHistory(): Promise<GameSummary[]> {
   const raw = await AsyncStorage.getItem(HISTORY_KEY);
   if (!raw) return [];
   try {
-    return JSON.parse(raw) as GameSummary[];
+    return parseMatchHistory(raw);
   } catch {
     return [];
   }
@@ -37,7 +52,6 @@ export default function MatchHistoryScreen() {
 
   const borderColor = useThemeColor({}, 'border');
   const mutedColor = useThemeColor({}, 'muted');
-  const brandColor = useThemeColor({}, 'brand');
 
   useEffect(() => {
     loadMatchHistory().then(data => {

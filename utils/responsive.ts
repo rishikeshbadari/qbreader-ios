@@ -6,8 +6,12 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BASE_WIDTH = 390;
 const BASE_HEIGHT = 844;
 
-const horizontalScaleFactor = SCREEN_WIDTH / BASE_WIDTH;
-const verticalScaleFactor = SCREEN_HEIGHT / BASE_HEIGHT;
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+const horizontalScaleFactor = clamp(SCREEN_WIDTH / BASE_WIDTH, 0.92, 1.12);
+const verticalScaleFactor = clamp(SCREEN_HEIGHT / BASE_HEIGHT, 0.9, 1.14);
 
 /**
  * Scale a size horizontally based on the reference width.
@@ -61,7 +65,7 @@ export const breakpoints = {
 /**
  * Recommended minimum touch target size (per platform guidance).
  */
-export const MIN_TOUCH_TARGET = scale(44);
+export const MIN_TOUCH_TARGET = Math.max(44, scale(44));
 
 export const deviceMetrics = {
   width: SCREEN_WIDTH,
