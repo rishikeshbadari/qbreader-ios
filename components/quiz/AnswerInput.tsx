@@ -11,6 +11,7 @@ interface Props {
   onSubmit: () => void;
   disabled?: boolean;
   autoFocus?: boolean;
+  placeholder?: string;
 }
 
 export function AnswerInput({
@@ -19,6 +20,7 @@ export function AnswerInput({
   onSubmit,
   disabled,
   autoFocus,
+  placeholder = 'Your answer...',
 }: Props) {
   const colorScheme = useColorScheme();
   const mutedColor = useThemeColor({}, 'muted');
@@ -44,7 +46,7 @@ export function AnswerInput({
         <TextInput
           value={value}
           onChangeText={onChangeText}
-          placeholder="Your answer..."
+          placeholder={placeholder}
           placeholderTextColor={mutedColor}
           style={[styles.input, { color: inputTextColor }]}
           autoCapitalize="sentences"

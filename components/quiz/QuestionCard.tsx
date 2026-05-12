@@ -25,6 +25,7 @@ interface Props {
   revealStartTime?: number | null;
   showRevealButton?: boolean;
   showMeta?: boolean;
+  questionOnly?: boolean;
 }
 
 export function QuestionCard({
@@ -41,6 +42,7 @@ export function QuestionCard({
   revealStartTime,
   showRevealButton = true,
   showMeta = true,
+  questionOnly = false,
 }: Props) {
   const colorScheme = useColorScheme();
   const { revealSpeed } = useSettings();
@@ -71,7 +73,7 @@ export function QuestionCard({
     revealIntervalMs > 0;
   const isRevealRunning = shouldAnimateQuestion && revealActive;
   const canShowRevealButton =
-    shouldAnimateQuestion && revealActive && showRevealButton && !isBuzzed;
+    shouldAnimateQuestion && revealActive && showRevealButton && !isBuzzed && !questionOnly;
 
   useEffect(() => {
     setHasRevealedFullQuestion(false);
@@ -254,7 +256,7 @@ export function QuestionCard({
       lightColor={Colors.light.surface}
       darkColor={Colors.dark.surface}
       style={[styles.container, { borderColor }]}>
-      {showMeta ? (
+      {showMeta && !questionOnly ? (
         <>
           <View style={styles.metaHeader}>
             <ThemedText type="subtitle" style={styles.title}>
@@ -274,9 +276,11 @@ export function QuestionCard({
         {isLoading ? (
           <View style={styles.loadingState}>
             <ActivityIndicator />
-            <ThemedText style={{ color: mutedColor }}>Loading a tossup…</ThemedText>
+            {!questionOnly ? (
+              <ThemedText style={{ color: mutedColor }}>Loading a tossup…</ThemedText>
+            ) : null}
           </View>
-        ) : error ? (
+        ) : error && !questionOnly ? (
           <ThemedText type="defaultSemiBold" style={[styles.error, { color: errorColor }]}>
             {error}
           </ThemedText>
@@ -296,7 +300,7 @@ export function QuestionCard({
                 ? displayedQuestion
                 : tossup?.question ?? ''}
             </ThemedText>
-            {showAnswer ? (
+            {showAnswer && !questionOnly ? (
               <View style={styles.answerBlock}>
                 <View style={styles.answerHeader}>
                   <ThemedText type="subtitle" style={styles.answerLabel}>

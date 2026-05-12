@@ -1,15 +1,15 @@
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, StatusBar, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { QuizGameLayout } from '@/components/quiz/QuizGameLayout';
-import { ThemedText } from '@/components/ThemedText';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useQuizSession } from '@/hooks/useQuizSession';
-import { responsiveFont, scale, spacing } from '@/utils/responsive';
+import { scale, spacing } from '@/utils/responsive';
 
 export default function PlayScreen() {
   const {
@@ -38,7 +38,10 @@ export default function PlayScreen() {
   // Pause when leaving screen
   useFocusEffect(
     useCallback(() => {
+      StatusBar.setHidden(true, 'fade');
+
       return () => {
+        StatusBar.setHidden(false, 'fade');
         if (playStateRef.current === 'active' && currentQuestionRef.current && !lastResultRef.current) {
           setPlayState('paused');
         }
@@ -55,7 +58,7 @@ export default function PlayScreen() {
     playState === 'idle' ||
     (playState === 'paused' && currentQuestion && !lastResult) ||
     (playState === 'paused' && !currentQuestion) ||
-    (playState === 'active' && !currentQuestion && !loadingQuestion && !error);
+    (playState === 'active' && !currentQuestion && !loadingQuestion);
 
   const handlePlayOverlayPress = () => {
     if (playState === 'idle') {
@@ -94,7 +97,7 @@ export default function PlayScreen() {
   };
 
   const overlayBackground = colorScheme === 'dark' ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.95)';
-  const overlayTextColor = colorScheme === 'dark' ? '#fff' : '#0f172a';
+  const overlayIconColor = colorScheme === 'dark' ? '#fff' : '#0f172a';
 
   const backgroundColor = Colors[colorScheme ?? 'light'].background;
 
@@ -103,6 +106,7 @@ export default function PlayScreen() {
       <QuizGameLayout
         title="QuizBowl Practice"
         subtitle="Powered by QBReader. Fresh tossups every time you buzz."
+        showHeader={false}
         question={currentQuestion}
         isLoading={loadingQuestion}
         error={error}
@@ -113,6 +117,9 @@ export default function PlayScreen() {
         onNext={handleNext}
         onRetry={handleRetry}
         promptText={promptInfo?.directedPrompt}
+        questionOnly
+        showMainActionLabel={false}
+        showSupplementalText={false}
         bottomPadding={tabBarHeight}
         parentHandlesBottomSafeArea
         overlay={
@@ -132,9 +139,11 @@ export default function PlayScreen() {
                 styles.playOverlay,
                 { backgroundColor: overlayBackground, opacity: pressed ? 0.9 : 1 },
               ]}>
-              <ThemedText type="defaultSemiBold" style={[styles.playOverlayLabel, { color: overlayTextColor }]}>
-                {playState === 'paused' ? 'Tap to Continue' : playState === 'active' ? 'Tap to Load Question' : 'Tap to Play'}
-              </ThemedText>
+              <MaterialIcons
+                name={error ? 'refresh' : playState === 'paused' ? 'play-circle-outline' : 'play-arrow'}
+                size={scale(54)}
+                color={overlayIconColor}
+              />
             </Pressable>
           ) : undefined
         }
@@ -153,10 +162,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.lg,
-  },
-  playOverlayLabel: {
-    fontSize: responsiveFont(18),
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
   },
 });

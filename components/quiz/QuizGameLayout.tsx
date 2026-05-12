@@ -7,6 +7,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -25,6 +26,7 @@ type Props = {
   title: string;
   subtitle: React.ReactNode;
   headerRight?: React.ReactNode;
+  showHeader?: boolean;
 
   // Question state
   question: Tossup | null | undefined;
@@ -56,6 +58,9 @@ type Props = {
 
   // Optional overlay
   overlay?: React.ReactNode;
+  questionOnly?: boolean;
+  showMainActionLabel?: boolean;
+  showSupplementalText?: boolean;
 
   // Bottom padding (for tab bar)
   bottomPadding?: number;
@@ -80,6 +85,7 @@ export function QuizGameLayout({
   title,
   subtitle,
   headerRight,
+  showHeader = true,
   question,
   isLoading,
   error,
@@ -101,6 +107,9 @@ export function QuizGameLayout({
   onRetry,
   onBuzzTyping,
   overlay,
+  questionOnly = false,
+  showMainActionLabel = true,
+  showSupplementalText = true,
   bottomPadding = 0,
   parentHandlesBottomSafeArea = false,
   buzzTimerEnd,
@@ -385,15 +394,17 @@ export function QuizGameLayout({
       <ThemedView style={styles.container}>
         <View style={[styles.content, { paddingBottom: contentPaddingBottom }]}>
           {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <ThemedText type="title">{title}</ThemedText>
-              {typeof subtitle === 'string' ? (
-                <ThemedText style={styles.subtitle}>{subtitle}</ThemedText>
-              ) : subtitle}
+          {showHeader ? (
+            <View style={styles.header}>
+              <View style={styles.headerText}>
+                <ThemedText type="title">{title}</ThemedText>
+                {typeof subtitle === 'string' ? (
+                  <ThemedText style={styles.subtitle}>{subtitle}</ThemedText>
+                ) : subtitle}
+              </View>
+              {headerRight}
             </View>
-            {headerRight}
-          </View>
+          ) : null}
 
           {/* Question Card */}
           <View style={styles.questionWrapper}>
@@ -408,6 +419,8 @@ export function QuizGameLayout({
               revealSpeedOverride={revealSpeed}
               revealStartTime={revealStartTime}
               showRevealButton={false}
+              showMeta={!questionOnly}
+              questionOnly={questionOnly}
               onWordIndexChange={handleWordIndexChange}
               onFullQuestionRevealChange={setRevealComplete}
             />
@@ -482,16 +495,24 @@ export function QuizGameLayout({
                 opacity: mainButtonDisabled ? 0.35 : pressed ? 0.9 : 1,
               },
             ]}>
-            <ThemedText type="defaultSemiBold" style={styles.actionLabel}>
-              {mainActionLabel}
-            </ThemedText>
+            {showMainActionLabel ? (
+              <ThemedText type="defaultSemiBold" style={styles.actionLabel}>
+                {mainActionLabel}
+              </ThemedText>
+            ) : (
+              <MaterialIcons
+                name={showNextButton ? 'arrow-forward' : 'bolt'}
+                size={scale(28)}
+                color="#fff"
+              />
+            )}
           </Pressable>
 
           {/* Extra info */}
-          {result?.directedPrompt && (
+          {showSupplementalText && result?.directedPrompt && (
             <ThemedText style={styles.prompt}>Directed prompt: {result.directedPrompt}</ThemedText>
           )}
-          {error && onRetry && (
+          {showSupplementalText && error && onRetry && (
             <Pressable onPress={onRetry}>
               <ThemedText style={[styles.error, { color: dangerColor }]}>{error} Tap to try again.</ThemedText>
             </Pressable>
@@ -509,7 +530,7 @@ export function QuizGameLayout({
           <Pressable style={styles.answerOverlayTouchable} onPress={Keyboard.dismiss} />
           <Animated.View style={[styles.answerInputContainer, { marginBottom: answerBottomOffset }]}>
             {/* Prompt hint */}
-            {promptText ? (
+            {showSupplementalText && promptText ? (
               <View style={styles.promptHintContainer}>
                 <ThemedText type="defaultSemiBold" style={[styles.promptHintText, { color: brandColor }]}>
                   {promptText}
@@ -517,7 +538,7 @@ export function QuizGameLayout({
               </View>
             ) : null}
             {/* Timer display */}
-            {timerSeconds != null && timerSeconds > 0 && (
+            {showSupplementalText && timerSeconds != null && timerSeconds > 0 && (
               <View style={styles.timerContainer}>
                 <ThemedText type="defaultSemiBold" style={[
                   styles.timerCountdown,
@@ -533,6 +554,7 @@ export function QuizGameLayout({
               onSubmit={handleSubmit}
               disabled={!question || isLoading}
               autoFocus
+              placeholder={showSupplementalText ? undefined : ''}
             />
             <View style={styles.submitRow}>
               <Pressable
@@ -543,7 +565,11 @@ export function QuizGameLayout({
                   styles.submitButton,
                   { backgroundColor: brandColor, opacity: pressed ? 0.8 : 1 },
                 ]}>
-                <ThemedText type="defaultSemiBold" style={styles.submitLabel}>Submit</ThemedText>
+                {showSupplementalText ? (
+                  <ThemedText type="defaultSemiBold" style={styles.submitLabel}>Submit</ThemedText>
+                ) : (
+                  <MaterialIcons name="check" size={scale(24)} color="#fff" />
+                )}
               </Pressable>
             </View>
           </Animated.View>
