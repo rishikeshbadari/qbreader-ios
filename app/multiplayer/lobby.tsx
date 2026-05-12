@@ -185,7 +185,10 @@ export default function LobbyScreen() {
             </Pressable>
           )}
           style={styles.playerList}
-          scrollEnabled={players.length > 6}
+          contentContainerStyle={styles.playerListContent}
+          nestedScrollEnabled
+          scrollEnabled
+          showsVerticalScrollIndicator={players.length > 4}
         />
       </View>
 
@@ -319,16 +322,21 @@ const styles = StyleSheet.create({
   playerSection: {
     flex: 1,
     marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: scale(18),
     padding: spacing.md,
     gap: spacing.xs,
+    minHeight: verticalScale(180),
   },
   sectionTitle: {
     fontSize: responsiveFont(16),
   },
   playerList: {
     flex: 1,
+  },
+  playerListContent: {
+    paddingBottom: spacing.xs,
   },
   settingsSection: {
     marginHorizontal: spacing.lg,

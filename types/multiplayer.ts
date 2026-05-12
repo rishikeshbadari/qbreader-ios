@@ -124,7 +124,7 @@ export type GameEvent =
   | { type: 'game:end'; summary?: GameSummary }
   | { type: 'game:settings'; settings: GameSettings }
   | { type: 'question:new'; tossup: Tossup; powerMarkWordIndex?: number; revealStartTime?: number }
-  | { type: 'question:preload'; tossup: Tossup; powerMarkWordIndex?: number }
+  | { type: 'question:preload'; tossup: Tossup; powerMarkWordIndex?: number; settingsKey?: string }
   | { type: 'question:reveal'; revealStartTime: number }
   | { type: 'question:request' }
   | { type: 'buzz:request'; playerId: string; wordIndex?: number; timestamp: number }

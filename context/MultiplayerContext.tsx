@@ -54,6 +54,10 @@ function findPowerMarkWordIndex(questionText: string): number | undefined {
   return undefined;
 }
 
+function buildSettingsKey(settings: GameSettings): string {
+  return `${[...settings.difficulties].sort((a, b) => a - b).join(',')}_${[...settings.categories].sort().join(',')}_${settings.revealSpeed}`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Context Type
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,6 +114,7 @@ type MultiplayerContextValue = {
 };
 
 const MultiplayerContext = createContext<MultiplayerContextValue | null>(null);
+const TYPING_THROTTLE_MS = 120;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider
@@ -151,6 +156,13 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const activeBuzzerIdRef = useRef<string | null>(null);
   const queuedBuzzWordIndexRef = useRef<Record<string, number | undefined>>({});
   const wrongAnswerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Optimistic-buzz tracking: true between local buzz tap and authoritative
+  // confirmation (buzz:lock / buzz:queue / buzz:unlock) from the coordinator.
+  const selfBuzzPendingRef = useRef(false);
+  // Throttle state for outbound buzz:typing broadcasts.
+  const lastTypingSendRef = useRef(0);
+  const pendingTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTypingTextRef = useRef('');
 
   // Prompt state: tracks if a player has been prompted to give a more specific answer
   const [promptText, setPromptText] = useState<string | null>(null);
@@ -172,9 +184,10 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   // Pre-fetched question (coordinator-local, before broadcasting to all devices)
   const prefetchedRef = useRef<{ tossup: Tossup; pmIndex?: number; settingsKey: string } | null>(null);
   const prefetchAbortRef = useRef<AbortController | null>(null);
+  const prefetchInFlightKeyRef = useRef<string | null>(null);
 
   // Preloaded question (received from coordinator, ready to reveal on all devices)
-  const preloadedQuestionRef = useRef<{ tossup: Tossup; pmIndex?: number } | null>(null);
+  const preloadedQuestionRef = useRef<{ tossup: Tossup; pmIndex?: number; settingsKey?: string } | null>(null);
 
   // Derived
   const isSelfLockedOut = selfPlayer ? lockedOutPlayers.includes(selfPlayer.id) : false;
@@ -248,10 +261,20 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setCountdownSeconds(null);
   }, []);
 
+  const clearPendingTyping = useCallback(() => {
+    if (pendingTypingTimerRef.current) {
+      clearTimeout(pendingTypingTimerRef.current);
+      pendingTypingTimerRef.current = null;
+    }
+    pendingTypingTextRef.current = '';
+    lastTypingSendRef.current = 0;
+  }, []);
+
   const resetState = useCallback(() => {
     fetchAbortRef.current?.abort();
     prefetchAbortRef.current?.abort();
     prefetchedRef.current = null;
+    prefetchInFlightKeyRef.current = null;
     preloadedQuestionRef.current = null;
     if (buzzTimerRef.current) {
       clearTimeout(buzzTimerRef.current);
@@ -285,12 +308,14 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setBuzzQueue([]);
     buzzQueueRef.current = [];
     queuedBuzzWordIndexRef.current = {};
+    selfBuzzPendingRef.current = false;
+    clearPendingTyping();
     setPromptText(null);
     promptedPlayerRef.current = null;
     setPausedByName(null);
     setReadyPlayers([]);
     setConnectionStatuses({});
-  }, [clearCountdownTimer, clearWrongAnswerTimer]);
+  }, [clearCountdownTimer, clearPendingTyping, clearWrongAnswerTimer]);
 
   const addQuestionToSummary = useCallback((tossup: Tossup, pmIndex?: number) => {
     setSummary(prev => {
@@ -434,28 +459,45 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     const { settings } = stateRef.current;
     if (!settings) return;
 
+    const settingsKey = buildSettingsKey(settings);
+    if (
+      prefetchedRef.current?.settingsKey === settingsKey ||
+      preloadedQuestionRef.current?.settingsKey === settingsKey ||
+      prefetchInFlightKeyRef.current === settingsKey
+    ) {
+      return;
+    }
+
     prefetchAbortRef.current?.abort();
     const controller = new AbortController();
     prefetchAbortRef.current = controller;
+    prefetchInFlightKeyRef.current = settingsKey;
 
     fetchRandomTossup(controller.signal, {
       difficulties: settings.difficulties,
       categories: settings.categories,
     }).then(tossup => {
       if (controller.signal.aborted) return;
+      const currentSettings = stateRef.current.settings;
+      if (!currentSettings || buildSettingsKey(currentSettings) !== settingsKey) return;
+
       const pmIndex = findPowerMarkWordIndex(tossup.question);
 
       // Store locally
       prefetchedRef.current = {
         tossup,
         pmIndex,
-        settingsKey: `${settings.difficulties.join(',')}_${settings.categories.join(',')}`,
+        settingsKey,
       };
-      preloadedQuestionRef.current = { tossup, pmIndex };
+      preloadedQuestionRef.current = { tossup, pmIndex, settingsKey };
 
       // Broadcast to all other devices so they have it ready
-      void send({ type: 'question:preload', tossup, powerMarkWordIndex: pmIndex });
-    }).catch(() => {});
+      void send({ type: 'question:preload', tossup, powerMarkWordIndex: pmIndex, settingsKey });
+    }).catch(() => {}).finally(() => {
+      if (prefetchInFlightKeyRef.current === settingsKey) {
+        prefetchInFlightKeyRef.current = null;
+      }
+    });
   }, [send]);
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -469,6 +511,11 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const revealPreloadedQuestion = useCallback(() => {
     const preloaded = preloadedQuestionRef.current;
     if (!preloaded) return false;
+    const { settings } = stateRef.current;
+    if (settings && preloaded.settingsKey && preloaded.settingsKey !== buildSettingsKey(settings)) {
+      preloadedQuestionRef.current = null;
+      return false;
+    }
 
     preloadedQuestionRef.current = null;
     prefetchedRef.current = null;
@@ -807,6 +854,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
       case 'game:countdown': {
         setCountdownSeconds(event.seconds);
+        if (isCoordinatorFn()) {
+          prefetchAndDistribute();
+        }
         break;
       }
 
@@ -822,6 +872,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         clearBuzzQueue();
         setCountdownSeconds(null);
         if (event.hostId) setHostId(event.hostId);
+        if (isCoordinatorFn()) {
+          prefetchAndDistribute();
+        }
         break;
       }
 
@@ -844,6 +897,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setSettings(event.settings);
         setSummary(prev => prev ? { ...prev, settings: event.settings } : prev);
         prefetchedRef.current = null;
+        prefetchInFlightKeyRef.current = null;
         preloadedQuestionRef.current = null;
         fetchAbortRef.current?.abort();
         prefetchAbortRef.current?.abort();
@@ -859,6 +913,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setBuzzWordIndex(undefined);
         setPromptText(null);
         promptedPlayerRef.current = null;
+        clearPendingTyping();
         clearBuzzQueue();
         break;
       }
@@ -872,6 +927,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         clearBuzzTimer();
         clearWrongAnswerTimer();
         clearCountdownTimer();
+        clearPendingTyping();
         if (event.summary) {
           setSummary(event.summary);
         } else {
@@ -899,15 +955,25 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         clearBuzzQueue();
         setPromptText(null);
         promptedPlayerRef.current = null;
+        clearPendingTyping();
         addQuestionToSummary(event.tossup, event.powerMarkWordIndex);
         break;
       }
 
       case 'question:preload': {
+        const currentSettings = stateRef.current.settings;
+        if (
+          event.settingsKey &&
+          currentSettings &&
+          event.settingsKey !== buildSettingsKey(currentSettings)
+        ) {
+          break;
+        }
         // Coordinator sent the next question early — store it for instant reveal
         preloadedQuestionRef.current = {
           tossup: event.tossup,
           pmIndex: event.powerMarkWordIndex,
+          settingsKey: event.settingsKey,
         };
         break;
       }
@@ -934,6 +1000,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           clearBuzzQueue();
           setPromptText(null);
           promptedPlayerRef.current = null;
+          clearPendingTyping();
           addQuestionToSummary(preloaded.tossup, preloaded.pmIndex);
         }
         break;
@@ -947,6 +1014,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       }
 
       case 'buzz:lock': {
+        // Coordinator's authoritative confirmation — clear any optimistic flag.
+        selfBuzzPendingRef.current = false;
         setIsBuzzLocked(true);
         setBuzzerAnswer('');
         setBuzzerResult(null);
@@ -972,6 +1041,17 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       case 'buzz:queue': {
         buzzQueueRef.current = event.playerIds;
         setBuzzQueue(event.playerIds);
+        // If we optimistically claimed the lock but the coordinator put us in
+        // the queue, revert: someone else won the race.
+        const { selfPlayer: queuedSelf } = stateRef.current;
+        if (selfBuzzPendingRef.current && queuedSelf && event.playerIds.includes(queuedSelf.id)) {
+          selfBuzzPendingRef.current = false;
+          if (activeBuzzerIdRef.current === queuedSelf.id) {
+            activeBuzzerIdRef.current = null;
+          }
+          setCurrentBuzzer(prev => (prev?.id === queuedSelf.id ? null : prev));
+          clearBuzzTimer();
+        }
         break;
       }
 
@@ -982,6 +1062,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
       case 'buzz:prompt': {
         // Player was prompted — give them another chance to answer
+        clearPendingTyping();
         setPromptText(event.directedPrompt ?? 'Be more specific');
         setBuzzerAnswer('');
         startBuzzTimer(event.playerId);
@@ -989,6 +1070,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       }
 
       case 'buzz:unlock': {
+        selfBuzzPendingRef.current = false;
+        clearPendingTyping();
         setLockedOutPlayers(event.lockedOutPlayers);
         setCurrentBuzzer(null);
         activeBuzzerIdRef.current = null;
@@ -1014,6 +1097,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
       case 'buzz:result': {
         const isCorrect = event.buzz.result?.directive === 'accept';
+        selfBuzzPendingRef.current = false;
+        clearPendingTyping();
         clearBuzzTimer();
         setPromptText(null);
 
@@ -1115,7 +1200,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         break;
       }
     }
-  }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, fetchAndBroadcastQuestion, judgeAndBroadcastResult, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, clearCountdownTimer, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState]);
+  }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, fetchAndBroadcastQuestion, judgeAndBroadcastResult, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState, prefetchAndDistribute]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Coordinator Transfer Detection (Rule 4)
@@ -1328,24 +1413,44 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
   /** Called when a player taps the buzz button — locks buzz for everyone. */
   const buzzIn = useCallback(async (wordIndex?: number) => {
-    const { selfPlayer, currentQuestion, currentResult, lockedOutPlayers } = stateRef.current;
+    const { selfPlayer, currentQuestion, currentResult, lockedOutPlayers, isBuzzLocked: locked } = stateRef.current;
     if (!currentQuestion || currentResult || !selfPlayer) return;
     if (lockedOutPlayers.includes(selfPlayer.id)) return;
+    if (selfBuzzPendingRef.current || activeBuzzerIdRef.current === selfPlayer.id || buzzQueueRef.current.includes(selfPlayer.id)) return;
 
     if (isCoordinatorFn()) {
       handleBuzzRequest(selfPlayer.id, wordIndex);
-    } else {
-      queuedBuzzWordIndexRef.current[selfPlayer.id] = wordIndex;
-      void send({ type: 'buzz:request', playerId: selfPlayer.id, wordIndex, timestamp: Date.now() });
+      return;
     }
-  }, [isCoordinatorFn, handleBuzzRequest, send]);
+
+    queuedBuzzWordIndexRef.current[selfPlayer.id] = wordIndex;
+    // Optimistic local lock — when no one else is currently buzzing, claim
+    // the lock now so the answer input opens instantly. The coordinator's
+    // authoritative buzz:lock / buzz:queue arrives ~one round trip later
+    // and either confirms (no-op) or overrides (existing handlers replace
+    // currentBuzzer / clear via the queue path). Eliminates the perceptible
+    // delay between tap and answer-input appearance.
+    if (!locked) {
+      selfBuzzPendingRef.current = true;
+      activeBuzzerIdRef.current = selfPlayer.id;
+      setIsBuzzLocked(true);
+      setCurrentBuzzer(selfPlayer);
+      setBuzzWordIndex(wordIndex);
+      setBuzzerAnswer('');
+      setBuzzerResult(null);
+      startBuzzTimer(selfPlayer.id);
+    }
+    void send({ type: 'buzz:request', playerId: selfPlayer.id, wordIndex, timestamp: Date.now() });
+  }, [isCoordinatorFn, handleBuzzRequest, send, startBuzzTimer]);
 
   /** Called when a player submits their answer (or auto-submits on timer expiry). */
   const submitBuzzAnswer = useCallback(async (answer: string) => {
-    const { selfPlayer, currentQuestion, currentResult, buzzWordIndex: wordIdx } = stateRef.current;
+    const { selfPlayer, currentQuestion, currentResult, buzzWordIndex: currentBuzzWordIndex } = stateRef.current;
     if (!currentQuestion || currentResult || !selfPlayer) return;
 
+    clearPendingTyping();
     clearBuzzTimer();
+    const wordIdx = currentBuzzWordIndex ?? queuedBuzzWordIndexRef.current[selfPlayer.id];
 
     const buzz: Buzz = {
       playerId: selfPlayer.id,
@@ -1359,13 +1464,44 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     } else {
       void send({ type: 'buzz:submit', buzz });
     }
-  }, [isCoordinatorFn, judgeAndBroadcastResult, send, clearBuzzTimer]);
+  }, [isCoordinatorFn, judgeAndBroadcastResult, send, clearBuzzTimer, clearPendingTyping]);
 
-  /** Broadcast current typing to other players. */
+  /**
+   * Broadcast current typing to other players. Throttled to one send per
+   * TYPING_THROTTLE_MS with a leading-edge fire (first keystroke goes
+   * immediately) and a trailing-edge fire (last keystroke in a burst is
+   * always delivered). Reduces channel saturation during rapid typing so
+   * higher-priority events (buzz:lock, buzz:result) aren't queued behind
+   * 5-10 keystroke broadcasts per second.
+   */
   const sendBuzzTyping = useCallback((text: string) => {
     const { selfPlayer } = stateRef.current;
     if (!selfPlayer) return;
-    void send({ type: 'buzz:typing', playerId: selfPlayer.id, text });
+    const now = Date.now();
+    const elapsed = now - lastTypingSendRef.current;
+
+    if (elapsed >= TYPING_THROTTLE_MS) {
+      lastTypingSendRef.current = now;
+      if (pendingTypingTimerRef.current) {
+        clearTimeout(pendingTypingTimerRef.current);
+        pendingTypingTimerRef.current = null;
+      }
+      void send({ type: 'buzz:typing', playerId: selfPlayer.id, text });
+      return;
+    }
+
+    pendingTypingTextRef.current = text;
+    if (pendingTypingTimerRef.current) return;
+
+    const remaining = TYPING_THROTTLE_MS - elapsed;
+    pendingTypingTimerRef.current = setTimeout(() => {
+      pendingTypingTimerRef.current = null;
+      const trailingText = pendingTypingTextRef.current;
+      const { selfPlayer: latestSelf } = stateRef.current;
+      if (!latestSelf) return;
+      lastTypingSendRef.current = Date.now();
+      void send({ type: 'buzz:typing', playerId: latestSelf.id, text: trailingText });
+    }, remaining);
   }, [send]);
 
   /** No one buzzed and the timer expired — show answer, no points. */
@@ -1407,6 +1543,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setSummary(prev => prev ? { ...prev, settings: newSettings } : prev);
     // Invalidate prefetch + preload since settings changed
     prefetchedRef.current = null;
+    prefetchInFlightKeyRef.current = null;
     preloadedQuestionRef.current = null;
     prefetchAbortRef.current?.abort();
     fetchAbortRef.current?.abort();
@@ -1421,10 +1558,11 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setBuzzWordIndex(undefined);
     setPromptText(null);
     promptedPlayerRef.current = null;
+    clearPendingTyping();
     clearBuzzQueue(true);
     setStatus('paused');
     await send({ type: 'game:settings', settings: newSettings });
-  }, [clearBuzzQueue, send]);
+  }, [clearBuzzQueue, clearPendingTyping, send]);
 
   // Host-only: force end game for everyone
   const endGame = useCallback(async () => {
@@ -1440,7 +1578,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     clearBuzzTimer();
     clearWrongAnswerTimer();
     clearCountdownTimer();
-  }, [send, clearBuzzQueue, clearBuzzTimer, clearWrongAnswerTimer, clearCountdownTimer]);
+    clearPendingTyping();
+  }, [send, clearBuzzQueue, clearBuzzTimer, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping]);
 
   // Rule 1: Graceful leave without ending game for others
   const leaveGame = useCallback(async () => {
@@ -1456,7 +1595,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     clearBuzzTimer();
     clearWrongAnswerTimer();
     clearCountdownTimer();
-  }, [send, clearBuzzQueue, clearBuzzTimer, clearWrongAnswerTimer, clearCountdownTimer]);
+    clearPendingTyping();
+  }, [send, clearBuzzQueue, clearBuzzTimer, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // New Actions: Ready, Kick, Host Transfer, Countdown
@@ -1503,6 +1643,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     if (countdownTimerRef.current) return;
     const { settings, hostId: currentHostId } = stateRef.current;
     if (!settings || !currentHostId) return;
+    if (isCoordinatorFn()) {
+      prefetchAndDistribute();
+    }
 
     // Start 3-second countdown
     let remaining = 3;
@@ -1544,9 +1687,13 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           settings: s.settings!,
           questions: [],
         });
+
+        if (isCoordinatorFn()) {
+          prefetchAndDistribute();
+        }
       }
     }, 1000);
-  }, [clearBuzzQueue, isHostValue, send]);
+  }, [clearBuzzQueue, isCoordinatorFn, isHostValue, prefetchAndDistribute, send]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Context Value

@@ -192,7 +192,16 @@ export function QuestionCard({
       onWordIndexChangeRef.current?.(revealIndexRef.current);
 
       if (revealIndexRef.current < words.length && !buzzedRef.current) {
-        animationTimeout.current = setTimeout(revealNextWord, revealIntervalMs);
+        // Re-anchor every tick to absolute clock to prevent setTimeout drift
+        // and JS-thread-stall divergence between devices. Word N should appear
+        // at revealStartTime + N * intervalMs; schedule the next tick for that
+        // exact moment relative to Date.now().
+        let delay = revealIntervalMs;
+        if (revealStartTime != null && revealIntervalMs > 0) {
+          const targetTime = revealStartTime + revealIndexRef.current * revealIntervalMs;
+          delay = Math.max(0, targetTime - Date.now());
+        }
+        animationTimeout.current = setTimeout(revealNextWord, delay);
       } else if (revealIndexRef.current >= words.length) {
         setHasRevealedFullQuestion((prev) => (prev ? prev : true));
       }

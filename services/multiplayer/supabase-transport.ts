@@ -5,16 +5,10 @@ import type { GameEvent } from '@/types/multiplayer';
 import type { MultiplayerTransport, TransportCallbacks, DiscoveryCallbacks } from './transport';
 import type { ServerEventCallbacks } from './ws-transport';
 
-const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const CODE_LENGTH = 6;
-
-function generateCode(): string {
-  let code = '';
-  for (let i = 0; i < CODE_LENGTH; i++) {
-    code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
-  }
-  return code;
-}
+type RoomCreationResponse = {
+  code: string;
+  host_token: string;
+};
 
 /**
  * Supabase Realtime transport for multiplayer communication.
@@ -35,6 +29,7 @@ export class SupabaseTransport implements MultiplayerTransport {
   private serverCallbacks?: ServerEventCallbacks;
   private playerId: string | null = null;
   private playerName: string | null = null;
+  private hostToken: string | null = null;
 
   constructor() {
     const url = Constants.expoConfig?.extra?.supabaseUrl;
@@ -42,7 +37,14 @@ export class SupabaseTransport implements MultiplayerTransport {
     if (!url || !key) {
       throw new Error('Supabase URL and anon key must be set in app.json extra');
     }
-    this.supabase = createClient(url, key);
+    this.supabase = createClient(url, key, {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+      db: { timeout: 8_000 },
+    });
   }
 
   setServerCallbacks(callbacks: ServerEventCallbacks): void {
@@ -63,42 +65,17 @@ export class SupabaseTransport implements MultiplayerTransport {
     this.callbacks = callbacks;
     this.playerName = playerNames;
 
-    // Generate a unique game code
-    let code: string | null = null;
-    for (let attempts = 0; attempts < 10; attempts++) {
-      const candidateCode = generateCode();
-      const { data, error } = await this.supabase
-        .from('rooms')
-        .select('code')
-        .eq('code', candidateCode)
-        .maybeSingle();
-      if (error) {
-        throw new Error(`Failed to verify room code: ${error.message}`);
-      }
-      if (!data) {
-        code = candidateCode;
-        break;
-      }
-    }
-
-    if (!code) {
-      throw new Error('Unable to allocate a unique game code. Please try again.');
-    }
-
-    // Register room in database
-    const { error } = await this.supabase
-      .from('rooms')
-      .insert({ code });
-    if (error) throw new Error(`Failed to create room: ${error.message}`);
-
+    const { code, host_token: hostToken } = await this.createRoom();
     this.sessionId = code;
+    this.hostToken = hostToken;
 
     // Subscribe to Realtime channel — wait for confirmation before proceeding
     try {
       await this.subscribeToChannel(code);
     } catch (error) {
-      await this.supabase.from('rooms').delete().eq('code', code);
+      await this.deleteHostedRoom();
       this.sessionId = null;
+      this.hostToken = null;
       this.isHost = false;
       throw error;
     }
@@ -111,25 +88,30 @@ export class SupabaseTransport implements MultiplayerTransport {
     sessionId: string,
     callbacks: TransportCallbacks,
   ): Promise<void> {
-    const code = sessionId.toUpperCase();
+    const code = sessionId.trim().toUpperCase();
     this.isHost = false;
     this.callbacks = callbacks;
-
-    // Verify room exists
-    const { data, error } = await this.supabase
-      .from('rooms')
-      .select('code')
-      .eq('code', code)
-      .maybeSingle();
-    if (error) {
-      throw new Error(`Failed to verify room: ${error.message}`);
-    }
-    if (!data) throw new Error('Room not found');
+    this.hostToken = null;
 
     this.sessionId = code;
 
-    // Subscribe to Realtime channel — wait for confirmation before proceeding
-    await this.subscribeToChannel(code);
+    const subscriptionPromise = this.subscribeToChannel(code);
+    subscriptionPromise.catch(() => undefined);
+
+    try {
+      const exists = await this.roomExists(code);
+      if (!exists) {
+        await this.closeChannel();
+        await subscriptionPromise.catch(() => undefined);
+        throw new Error('Room not found');
+      }
+
+      await subscriptionPromise;
+    } catch (error) {
+      await this.closeChannel();
+      this.sessionId = null;
+      throw error;
+    }
 
     this.serverCallbacks?.onConnectionStatusChange?.('connected');
   }
@@ -150,12 +132,11 @@ export class SupabaseTransport implements MultiplayerTransport {
     }
 
     // Host cleans up the room row
-    if (this.isHost && this.sessionId) {
-      await this.supabase.from('rooms').delete().eq('code', this.sessionId);
-    }
+    await this.deleteHostedRoom();
 
     this.isHost = false;
     this.sessionId = null;
+    this.hostToken = null;
     this.callbacks = undefined;
     this.serverCallbacks = undefined;
     this.playerId = null;
@@ -186,6 +167,44 @@ export class SupabaseTransport implements MultiplayerTransport {
 
   // ─── Internal ───────────────────────────────────────────────────────────
 
+  private async createRoom(): Promise<RoomCreationResponse> {
+    const { data, error } = await this.supabase.rpc('create_room').single();
+    if (error) throw new Error(`Failed to create room: ${error.message}`);
+
+    const room = data as RoomCreationResponse | null;
+    if (!room?.code || !room.host_token) {
+      throw new Error('Failed to create room: invalid Supabase response');
+    }
+
+    return room;
+  }
+
+  private async roomExists(code: string): Promise<boolean> {
+    const { data, error } = await this.supabase.rpc('room_exists', { p_code: code });
+    if (error) throw new Error(`Failed to verify room: ${error.message}`);
+    return data === true;
+  }
+
+  private async deleteHostedRoom(): Promise<void> {
+    if (!this.isHost || !this.sessionId || !this.hostToken) return;
+
+    const { error } = await this.supabase.rpc('delete_room', {
+      p_code: this.sessionId,
+      p_host_token: this.hostToken,
+    });
+
+    if (error) {
+      console.warn('Failed to delete room:', error.message);
+    }
+  }
+
+  private async closeChannel(): Promise<void> {
+    if (!this.channel) return;
+    const channel = this.channel;
+    this.channel = null;
+    await this.supabase.removeChannel(channel);
+  }
+
   private subscribeToChannel(code: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       let settled = false;
@@ -197,7 +216,10 @@ export class SupabaseTransport implements MultiplayerTransport {
       };
 
       this.channel = this.supabase.channel(`game:${code}`, {
-        config: { broadcast: { self: false } },
+        config: {
+          broadcast: { ack: false, self: false },
+          presence: this.playerId ? { key: this.playerId } : undefined,
+        },
       });
 
       // Game event relay

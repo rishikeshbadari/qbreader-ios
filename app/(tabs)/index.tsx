@@ -7,8 +7,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { QuizGameLayout } from '@/components/quiz/QuizGameLayout';
 import { ThemedText } from '@/components/ThemedText';
 import { Colors } from '@/constants/Colors';
-import { useQuizSession } from '@/hooks/useQuizSession';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { useQuizSession } from '@/hooks/useQuizSession';
 import { responsiveFont, scale, spacing } from '@/utils/responsive';
 
 export default function PlayScreen() {
@@ -102,7 +102,7 @@ export default function PlayScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
       <QuizGameLayout
         title="QuizBowl Practice"
-        subtitle="Powered by QBReader — fresh tossups every time you buzz."
+        subtitle="Powered by QBReader. Fresh tossups every time you buzz."
         question={currentQuestion}
         isLoading={loadingQuestion}
         error={error}
