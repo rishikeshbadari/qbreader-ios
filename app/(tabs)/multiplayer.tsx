@@ -1,3 +1,4 @@
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,6 +13,7 @@ import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from 
 export default function MultiplayerTab() {
   const colorScheme = useColorScheme();
   const router = useRouter();
+  const tabBarHeight = useBottomTabBarHeight();
   const backgroundColor = Colors[colorScheme ?? 'light'].background;
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
@@ -34,7 +36,7 @@ export default function MultiplayerTab() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
-      <ThemedView style={styles.container}>
+      <ThemedView style={[styles.container, { paddingBottom: tabBarHeight + spacing.md }]}>
         <View style={styles.header}>
           <ThemedText type="title">Multiplayer</ThemedText>
           <ThemedText style={[styles.subtitle, { color: mutedColor }]}>

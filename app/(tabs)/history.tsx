@@ -1,3 +1,4 @@
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -40,6 +41,7 @@ const FILTER_METADATA: Record<
 export default function HistoryScreen() {
   const colorScheme = useColorScheme();
   const backgroundColor = Colors[colorScheme ?? 'light'].background;
+  const tabBarHeight = useBottomTabBarHeight();
   const { history } = useQuizSession();
   const stats = useSessionStats();
   const [activeFilter, setActiveFilter] = useState<HistoryFilter | null>(null);
@@ -91,7 +93,7 @@ export default function HistoryScreen() {
           <SessionHistoryList
             history={filteredHistory}
             style={styles.list}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, { paddingBottom: tabBarHeight + spacing.lg }]}
             groupByDirective={false}
             ListHeaderComponent={
               <View style={styles.detailHeader}>
@@ -114,7 +116,7 @@ export default function HistoryScreen() {
             }
           />
         ) : (
-          <ScrollView contentContainerStyle={styles.statsContent}>
+          <ScrollView contentContainerStyle={[styles.statsContent, { paddingBottom: tabBarHeight + spacing.lg }]}>
             {header}
             <SessionStats stats={stats} compact onSelectCard={handleSelectCard} />
             <ThemedText style={styles.helperText}>
