@@ -251,11 +251,14 @@ export function QuestionCard({
     setDisplayedQuestion(tossup.question);
   };
 
+  const answerResultColor = getResultColor(result, successColor, warningColor, errorColor, brandColor);
+  const answerResultLabel = getResultLabel(result);
+
   return (
     <ThemedView
       lightColor={Colors.light.surface}
       darkColor={Colors.dark.surface}
-      style={[styles.container, { borderColor }]}>
+      style={[styles.container, questionOnly && styles.questionOnlyContainer, { borderColor }]}>
       {showMeta && !questionOnly ? (
         <>
           <View style={styles.metaHeader}>
@@ -272,7 +275,7 @@ export function QuestionCard({
           </View>
         </>
       ) : null}
-      <View style={styles.questionBlock}>
+      <View style={[styles.questionBlock, !questionOnly && styles.standardQuestionBlock, questionOnly && styles.questionOnlyBlock]}>
         {isLoading ? (
           <View style={styles.loadingState}>
             <ActivityIndicator />
@@ -290,16 +293,31 @@ export function QuestionCard({
             style={styles.questionScroll}
             contentContainerStyle={[
               styles.questionScrollContent,
+              questionOnly && styles.questionOnlyScrollContent,
               canShowRevealButton && styles.questionScrollWithButton,
               { paddingBottom: scrollPaddingBottom },
             ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}>
-            <ThemedText style={styles.questionBody}>
+            <ThemedText style={[styles.questionBody, questionOnly && styles.questionOnlyBody]}>
               {shouldAnimateQuestion
                 ? displayedQuestion
                 : tossup?.question ?? ''}
             </ThemedText>
+            {showAnswer && questionOnly ? (
+              <View style={[styles.questionOnlyAnswerBlock, { borderColor }]}>
+                {answerResultLabel ? (
+                  <ThemedText
+                    type="defaultSemiBold"
+                    style={[styles.questionOnlyResultLabel, { color: answerResultColor }]}>
+                    {answerResultLabel}
+                  </ThemedText>
+                ) : null}
+                <ThemedText style={styles.questionOnlyAnswerText}>
+                  {tossup?.answer}
+                </ThemedText>
+              </View>
+            ) : null}
             {showAnswer && !questionOnly ? (
               <View style={styles.answerBlock}>
                 <View style={styles.answerHeader}>
@@ -311,9 +329,9 @@ export function QuestionCard({
                       type="defaultSemiBold"
                       style={[
                         styles.answerResult,
-                        { color: getResultColor(result, successColor, warningColor, errorColor, brandColor) },
+                        { color: answerResultColor },
                       ]}>
-                      {getResultLabel(result)}
+                      {answerResultLabel}
                     </ThemedText>
                   ) : null}
                 </View>
@@ -356,6 +374,10 @@ const styles = StyleSheet.create({
     shadowRadius: scale(20),
     elevation: 2,
   },
+  questionOnlyContainer: {
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xl,
+  },
   metaHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -384,9 +406,14 @@ const styles = StyleSheet.create({
   },
   questionBlock: {
     flex: 1,
+    position: 'relative',
+  },
+  standardQuestionBlock: {
     minHeight: verticalScale(240),
     maxHeight: verticalScale(360),
-    position: 'relative',
+  },
+  questionOnlyBlock: {
+    minHeight: 0,
   },
   questionScroll: {
     flex: 1,
@@ -394,12 +421,21 @@ const styles = StyleSheet.create({
   questionScrollContent: {
     paddingRight: scale(6),
   },
+  questionOnlyScrollContent: {
+    paddingRight: 0,
+    paddingBottom: spacing.xl,
+  },
   questionScrollWithButton: {
     paddingBottom: verticalScale(56),
   },
   questionBody: {
     fontSize: responsiveFont(17),
     lineHeight: verticalScale(26),
+  },
+  questionOnlyBody: {
+    fontSize: responsiveFont(20),
+    lineHeight: verticalScale(32),
+    letterSpacing: 0.1,
   },
   loadingState: {
     flexDirection: 'row',
@@ -409,6 +445,21 @@ const styles = StyleSheet.create({
   answerBlock: {
     marginTop: spacing.sm,
     gap: spacing.xs,
+  },
+  questionOnlyAnswerBlock: {
+    marginTop: spacing.lg,
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: spacing.sm,
+  },
+  questionOnlyResultLabel: {
+    fontSize: responsiveFont(17),
+    letterSpacing: 0.2,
+  },
+  questionOnlyAnswerText: {
+    fontSize: responsiveFont(17),
+    lineHeight: verticalScale(25),
+    opacity: 0.86,
   },
   answerLabel: {
     fontSize: responsiveFont(18),

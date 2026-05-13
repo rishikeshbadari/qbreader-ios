@@ -1,4 +1,3 @@
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useRef, useState } from 'react';
@@ -6,6 +5,7 @@ import { Pressable, StatusBar, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { QuizGameLayout } from '@/components/quiz/QuizGameLayout';
+import { FLOATING_TAB_BAR_SURFACE_HEIGHT } from '@/components/ui/FloatingTabBar';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useQuizSession } from '@/hooks/useQuizSession';
@@ -24,7 +24,6 @@ export default function PlayScreen() {
   } = useQuizSession();
 
   const [playState, setPlayState] = useState<'idle' | 'active' | 'paused'>('idle');
-  const tabBarHeight = useBottomTabBarHeight();
   const colorScheme = useColorScheme();
 
   // Refs for focus handler
@@ -120,7 +119,7 @@ export default function PlayScreen() {
         questionOnly
         showMainActionLabel={false}
         showSupplementalText={false}
-        bottomPadding={tabBarHeight}
+        bottomPadding={FLOATING_TAB_BAR_SURFACE_HEIGHT + spacing.md}
         parentHandlesBottomSafeArea
         overlay={
           showPlayOverlay ? (

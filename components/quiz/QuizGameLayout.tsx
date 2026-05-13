@@ -384,15 +384,16 @@ export function QuizGameLayout({
     }
   };
 
-  const contentPaddingBottom = spacing.lg + bottomPadding + insets.bottom;
+  const safeAreaBottomPadding = parentHandlesBottomSafeArea ? 0 : insets.bottom;
+  const contentPaddingBottom = bottomPadding + safeAreaBottomPadding + (questionOnly ? 0 : spacing.lg);
   const answerBottomOffset = keyboardHeight > 0
     ? keyboardAnimatedValue
-    : bottomPadding + spacing.md;
+    : bottomPadding + (questionOnly ? 0 : spacing.md);
 
   return (
     <View style={styles.root}>
       <ThemedView style={styles.container}>
-        <View style={[styles.content, { paddingBottom: contentPaddingBottom }]}>
+        <View style={[styles.content, questionOnly && styles.questionOnlyContent, { paddingBottom: contentPaddingBottom }]}>
           {/* Header */}
           {showHeader ? (
             <View style={styles.header}>
@@ -490,6 +491,7 @@ export function QuizGameLayout({
             disabled={mainButtonDisabled}
             style={({ pressed }) => [
               styles.mainButton,
+              questionOnly && styles.questionOnlyMainButton,
               {
                 backgroundColor: mainButtonDisabled ? mutedColor : showNextButton ? brandColor : dangerColor,
                 opacity: mainButtonDisabled ? 0.35 : pressed ? 0.9 : 1,
@@ -591,6 +593,11 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md,
   },
+  questionOnlyContent: {
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -617,6 +624,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: MIN_TOUCH_TARGET,
+  },
+  questionOnlyMainButton: {
+    borderRadius: scale(22),
+    minHeight: verticalScale(58),
   },
   actionLabel: {
     color: '#fff',

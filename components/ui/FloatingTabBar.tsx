@@ -15,11 +15,12 @@ const BAR_HEIGHT = verticalScale(64);
 const BAR_RADIUS = scale(32);
 const BAR_HORIZONTAL_PADDING = scale(6);
 
+export const FLOATING_TAB_BAR_SURFACE_HEIGHT = BAR_HEIGHT;
+
 export function FloatingTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
   const isDark = colorScheme === 'dark';
-  const showLabels = state.routes[state.index]?.name !== 'index';
   const [barWidth, setBarWidth] = useState(0);
   const activeIndex = useRef(new Animated.Value(state.index)).current;
   const liquidPulse = useRef(new Animated.Value(0)).current;
@@ -226,21 +227,19 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
                 {options.tabBarIcon?.({
                   focused,
                   color,
-                  size: showLabels ? focused ? scale(24) : scale(22) : focused ? scale(28) : scale(26),
+                  size: focused ? scale(24) : scale(22),
                 })}
-                {showLabels ? (
-                  <ThemedText
-                    numberOfLines={1}
-                    style={[
-                      styles.label,
-                      {
-                        color,
-                        opacity: focused ? 1 : 0.76,
-                      },
-                    ]}>
-                    {label}
-                  </ThemedText>
-                ) : null}
+                <ThemedText
+                  numberOfLines={1}
+                  style={[
+                    styles.label,
+                    {
+                      color,
+                      opacity: focused ? 1 : 0.76,
+                    },
+                  ]}>
+                  {label}
+                </ThemedText>
               </Pressable>
             );
           })}
