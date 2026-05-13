@@ -849,6 +849,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
       case 'host:transfer': {
         setHostId(event.newHostId);
+        setSummary(prev => prev ? { ...prev, hostId: event.newHostId } : prev);
         break;
       }
 
@@ -1279,6 +1280,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       },
       onHostTransferred: (newHostId) => {
         setHostId(newHostId);
+        setSummary(prev => prev ? { ...prev, hostId: newHostId } : prev);
       },
       onConnectionStatusChange: (connectionStatus) => {
         const { selfPlayer } = stateRef.current;
@@ -1630,7 +1632,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const transferHost = useCallback(async (newHostId: string) => {
     if (!isHostValue) return;
     setHostId(newHostId);
-    void send({ type: 'host:transfer', newHostId });
+    setSummary(prev => prev ? { ...prev, hostId: newHostId } : prev);
+    await send({ type: 'host:transfer', newHostId });
 
     // Also tell the server
     if (transportRef.current instanceof SupabaseTransport) {

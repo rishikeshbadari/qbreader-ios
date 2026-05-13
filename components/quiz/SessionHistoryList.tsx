@@ -75,9 +75,6 @@ export function SessionHistoryList({
           darkColor={Colors.dark.surface}
           style={[styles.emptyState, { borderColor }]}>
           <ThemedText type="defaultSemiBold">No answers yet</ThemedText>
-          <ThemedText>
-            Play a tossup and each buzz will appear here with the judged result.
-          </ThemedText>
         </ThemedView>
       </View>
     );

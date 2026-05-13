@@ -17,19 +17,16 @@ export default function MultiplayerTab() {
   const backgroundColor = Colors[colorScheme ?? 'light'].background;
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
-  const mutedColor = useThemeColor({}, 'muted');
   const surfaceColor = useThemeColor({}, 'surface');
 
   const actions = [
     {
       title: 'Start a Game',
-      description: 'Host a new game and invite nearby players.',
       href: '/multiplayer/host' as const,
       primary: true,
     },
     {
       title: 'Join a Game',
-      description: 'Find and join a nearby game.',
       href: '/multiplayer/join' as const,
     },
   ];
@@ -39,9 +36,6 @@ export default function MultiplayerTab() {
       <ThemedView style={[styles.container, { paddingBottom: tabBarHeight + spacing.md }]}>
         <View style={styles.header}>
           <ThemedText type="title">Multiplayer</ThemedText>
-          <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
-            Play locally over Wi-Fi or Bluetooth. Start a game or join one nearby.
-          </ThemedText>
         </View>
         <View style={styles.actions}>
           {actions.map((action) => (
@@ -66,13 +60,6 @@ export default function MultiplayerTab() {
                   action.primary && styles.primaryText,
                 ]}>
                 {action.title}
-              </ThemedText>
-              <ThemedText
-                style={[
-                  styles.actionDescription,
-                  action.primary ? styles.primaryTextMuted : { color: mutedColor },
-                ]}>
-                {action.description}
               </ThemedText>
             </Pressable>
           ))}
@@ -106,9 +93,6 @@ const styles = StyleSheet.create({
   header: {
     gap: spacing.xs,
   },
-  subtitle: {
-    fontSize: responsiveFont(14),
-  },
   actions: {
     gap: spacing.md,
   },
@@ -116,8 +100,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: scale(20),
     padding: spacing.lg,
-    gap: spacing.xs,
     minHeight: MIN_TOUCH_TARGET,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   primaryCard: {
     shadowColor: '#4338CA',
@@ -129,14 +114,8 @@ const styles = StyleSheet.create({
   actionTitle: {
     fontSize: responsiveFont(16),
   },
-  actionDescription: {
-    fontSize: responsiveFont(13),
-  },
   primaryText: {
     color: '#fff',
-  },
-  primaryTextMuted: {
-    color: 'rgba(255, 255, 255, 0.75)',
   },
   rulesLink: {
     alignSelf: 'center',

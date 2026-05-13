@@ -18,23 +18,19 @@ type HistoryFilter = 'answered' | 'correct' | 'incorrect' | 'skipped';
 
 const FILTER_METADATA: Record<
   HistoryFilter,
-  { title: string; description: string }
+  { title: string }
 > = {
   answered: {
     title: 'All answers',
-    description: 'Every tossup you’ve heard this session.',
   },
   correct: {
     title: 'Correct answers',
-    description: 'Tossups you nailed before hearing the full question.',
   },
   incorrect: {
     title: 'Incorrect answers',
-    description: 'Responses that were marked incorrect or prompted.',
   },
   skipped: {
     title: 'Skipped',
-    description: 'Tossups you chose to move on from.',
   },
 };
 
@@ -78,11 +74,7 @@ export default function HistoryScreen() {
 
   const header = (
     <View style={styles.header}>
-      <ThemedText type="title">Answer log</ThemedText>
-      <ThemedText style={styles.subtitle}>
-        Every tossup you’ve attempted this session, with your response and the
-        judged directive.
-      </ThemedText>
+      <ThemedText type="title">History</ThemedText>
     </View>
   );
 
@@ -109,9 +101,6 @@ export default function HistoryScreen() {
                   <ThemedText style={styles.backLabel}>‹ Session stats</ThemedText>
                 </Pressable>
                 <ThemedText type="title">{FILTER_METADATA[activeFilter].title}</ThemedText>
-                <ThemedText style={styles.subtitle}>
-                  {FILTER_METADATA[activeFilter].description}
-                </ThemedText>
               </View>
             }
           />
@@ -119,9 +108,6 @@ export default function HistoryScreen() {
           <ScrollView contentContainerStyle={[styles.statsContent, { paddingBottom: tabBarHeight + spacing.lg }]}>
             {header}
             <SessionStats stats={stats} compact onSelectCard={handleSelectCard} />
-            <ThemedText style={styles.helperText}>
-              Tap a stat to review tossups from that category.
-            </ThemedText>
           </ScrollView>
         )}
       </ThemedView>
@@ -149,13 +135,6 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: spacing.md,
-  },
-  subtitle: {
-    marginTop: spacing.sm - scale(2),
-    opacity: 0.8,
-  },
-  helperText: {
-    opacity: 0.8,
   },
   detailHeader: {
     gap: spacing.sm,

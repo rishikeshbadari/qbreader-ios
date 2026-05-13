@@ -58,6 +58,7 @@ type Props = {
 
   // Optional overlay
   overlay?: React.ReactNode;
+  topAccessory?: React.ReactNode;
   questionOnly?: boolean;
   showMainActionLabel?: boolean;
   showSupplementalText?: boolean;
@@ -107,6 +108,7 @@ export function QuizGameLayout({
   onRetry,
   onBuzzTyping,
   overlay,
+  topAccessory,
   questionOnly = false,
   showMainActionLabel = true,
   showSupplementalText = true,
@@ -407,6 +409,8 @@ export function QuizGameLayout({
             </View>
           ) : null}
 
+          {topAccessory ? <View style={styles.topAccessory}>{topAccessory}</View> : null}
+
           {/* Question Card */}
           <View style={styles.questionWrapper}>
             <QuestionCard
@@ -611,6 +615,9 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     opacity: 0.8,
+  },
+  topAccessory: {
+    zIndex: 1,
   },
   questionWrapper: {
     flex: 1,

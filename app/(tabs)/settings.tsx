@@ -150,9 +150,6 @@ export default function SettingsScreen() {
         {/* Header */}
         <View style={styles.header}>
           <ThemedText type="title">Settings</ThemedText>
-          <ThemedText style={styles.subtitle}>
-            Configure question difficulty and categories.
-          </ThemedText>
         </View>
 
         {/* Reveal Speed */}
@@ -281,10 +278,6 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: spacing.xs,
-  },
-  subtitle: {
-    opacity: 0.7,
-    fontSize: responsiveFont(14),
   },
   section: {
     borderRadius: scale(16),

@@ -37,7 +37,7 @@ export default function PlayScreen() {
   // Pause when leaving screen
   useFocusEffect(
     useCallback(() => {
-      StatusBar.setHidden(true, 'fade');
+      StatusBar.setHidden(false, 'fade');
 
       return () => {
         StatusBar.setHidden(false, 'fade');

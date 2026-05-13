@@ -74,9 +74,6 @@ export default function JoinGameScreen() {
               <ThemedText style={styles.backLabel}>&#8249; Back</ThemedText>
             </Pressable>
             <ThemedText type="title">Join a Game</ThemedText>
-            <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
-              Enter the game code from the host to join.
-            </ThemedText>
           </View>
 
           {/* Name input */}
@@ -160,9 +157,6 @@ const styles = StyleSheet.create({
   },
   backLabel: {
     fontSize: responsiveFont(16),
-  },
-  subtitle: {
-    fontSize: responsiveFont(14),
   },
   section: {
     borderWidth: StyleSheet.hairlineWidth,

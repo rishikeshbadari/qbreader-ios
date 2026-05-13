@@ -1,8 +1,9 @@
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { getHostTransferCandidates, HostTransferModal } from '@/components/multiplayer/HostTransferModal';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { GameCodeDisplay } from '@/components/multiplayer/GameCodeDisplay';
@@ -20,6 +21,7 @@ export default function LobbyScreen() {
     gameCode,
     status,
     players,
+    allPlayers,
     selfPlayer,
     hostId,
     isHost,
@@ -43,6 +45,20 @@ export default function LobbyScreen() {
   const isSelfReady = selfPlayer ? readyPlayers.includes(selfPlayer.id) : false;
   const readyCount = readyPlayers.length;
   const canStart = isHost && readyCount >= 2;
+  const hostTransferCandidates = useMemo(
+    () => getHostTransferCandidates(players, allPlayers, selfPlayer?.id),
+    [players, allPlayers, selfPlayer?.id],
+  );
+  const defaultHostCandidateId = hostTransferCandidates[0]?.id ?? null;
+  const [showHostTransferModal, setShowHostTransferModal] = useState(false);
+  const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
+  const [isTransferringHost, setIsTransferringHost] = useState(false);
+
+  useEffect(() => {
+    if (showHostTransferModal) {
+      setSelectedHostId(defaultHostCandidateId);
+    }
+  }, [defaultHostCandidateId, showHostTransferModal]);
 
   // Navigate to game when status changes to playing
   useEffect(() => {
@@ -65,10 +81,16 @@ export default function LobbyScreen() {
   }, [countdownSeconds, countdownOpacity]);
 
   const handleLeave = useCallback(() => {
+    if (isHost && hostTransferCandidates.length > 0) {
+      setSelectedHostId(defaultHostCandidateId);
+      setShowHostTransferModal(true);
+      return;
+    }
+
     Alert.alert(
       'Leave Game',
       isHost
-        ? 'You are the host. If you leave, another player will become host. Leave anyway?'
+        ? 'Leave this game?'
         : 'Are you sure you want to leave the game?',
       [
         { text: 'Cancel', style: 'cancel' },
@@ -82,7 +104,22 @@ export default function LobbyScreen() {
         },
       ],
     );
-  }, [isHost, leaveGame, router]);
+  }, [defaultHostCandidateId, hostTransferCandidates.length, isHost, leaveGame, router]);
+
+  const handleConfirmHostTransfer = useCallback(async () => {
+    const nextHostId = selectedHostId ?? defaultHostCandidateId;
+    if (!nextHostId || isTransferringHost) return;
+
+    setIsTransferringHost(true);
+    try {
+      await transferHost(nextHostId);
+      await leaveGame();
+      setShowHostTransferModal(false);
+      router.replace('/multiplayer');
+    } finally {
+      setIsTransferringHost(false);
+    }
+  }, [defaultHostCandidateId, isTransferringHost, leaveGame, router, selectedHostId, transferHost]);
 
   const handleKick = useCallback((playerId: string, playerName: string) => {
     Alert.alert(
@@ -272,6 +309,17 @@ export default function LobbyScreen() {
           </Pressable>
         )}
       </View>
+
+      <HostTransferModal
+        visible={showHostTransferModal}
+        players={hostTransferCandidates}
+        selectedPlayerId={selectedHostId}
+        defaultPlayerId={defaultHostCandidateId}
+        isSubmitting={isTransferringHost}
+        onSelectPlayer={setSelectedHostId}
+        onCancel={() => setShowHostTransferModal(false)}
+        onConfirm={handleConfirmHostTransfer}
+      />
     </ThemedView>
   );
 }

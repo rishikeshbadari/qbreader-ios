@@ -161,8 +161,11 @@ export class SupabaseTransport implements MultiplayerTransport {
     // Handled via game-level events (player:kick)
   }
 
-  transferHost(_newHostId: string): void {
-    // Handled via game-level events (host:transfer)
+  transferHost(newHostId: string): void {
+    if (newHostId !== this.playerId) {
+      this.isHost = false;
+      this.hostToken = null;
+    }
   }
 
   // ─── Internal ───────────────────────────────────────────────────────────

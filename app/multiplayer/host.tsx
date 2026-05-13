@@ -116,9 +116,6 @@ export default function HostGameScreen() {
             <ThemedText style={styles.backLabel}>‹ Back</ThemedText>
           </Pressable>
           <ThemedText type="title">Start a Game</ThemedText>
-          <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
-            Choose settings for this game session.
-          </ThemedText>
         </View>
 
         {/* Name input */}
@@ -266,9 +263,6 @@ const styles = StyleSheet.create({
   },
   backLabel: {
     fontSize: responsiveFont(16),
-  },
-  subtitle: {
-    fontSize: responsiveFont(14),
   },
   section: {
     borderWidth: StyleSheet.hairlineWidth,

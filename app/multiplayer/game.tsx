@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -10,6 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 
+import { getHostTransferCandidates, HostTransferModal } from '@/components/multiplayer/HostTransferModal';
 import { ChipSelector } from '@/components/quiz/ChipSelector';
 import { QuizGameLayout } from '@/components/quiz/QuizGameLayout';
 import { ThemedText } from '@/components/ThemedText';
@@ -28,6 +29,7 @@ export default function MultiplayerGameScreen() {
   const {
     status,
     players,
+    allPlayers,
     settings,
     currentQuestion,
     currentResult,
@@ -53,6 +55,7 @@ export default function MultiplayerGameScreen() {
     pauseGame,
     resumeGame,
     updateSettings,
+    transferHost,
     leaveGame,
   } = useMultiplayer();
 
@@ -65,6 +68,9 @@ export default function MultiplayerGameScreen() {
 
   const { availableCategories, availableDifficulties, revealSpeed } = useSettings();
   const [showSettings, setShowSettings] = useState(false);
+  const [showHostTransferModal, setShowHostTransferModal] = useState(false);
+  const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
+  const [isTransferringHost, setIsTransferringHost] = useState(false);
 
   // Temp settings state for modal
   const [tempCategories, setTempCategories] = useState<string[]>([]);
@@ -75,11 +81,23 @@ export default function MultiplayerGameScreen() {
   const brandColor = useThemeColor({}, 'brand');
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
+  const surfaceColor = useThemeColor({}, 'surface');
   const successColor = useThemeColor({}, 'success');
   const errorColor = useThemeColor({}, 'error');
 
   const isPlaying = status === 'playing';
   const selfScore = selfPlayer ? (scores[selfPlayer.id] ?? 0) : 0;
+  const hostTransferCandidates = useMemo(
+    () => getHostTransferCandidates(players, allPlayers, selfPlayer?.id),
+    [players, allPlayers, selfPlayer?.id],
+  );
+  const defaultHostCandidateId = hostTransferCandidates[0]?.id ?? null;
+
+  useEffect(() => {
+    if (showHostTransferModal) {
+      setSelectedHostId(defaultHostCandidateId);
+    }
+  }, [defaultHostCandidateId, showHostTransferModal]);
 
   const handleOpenSettings = async () => {
     if (!isHost) return;
@@ -106,8 +124,29 @@ export default function MultiplayerGameScreen() {
   };
 
   const handleLeave = async () => {
+    if (isHost && hostTransferCandidates.length > 0) {
+      setSelectedHostId(defaultHostCandidateId);
+      setShowHostTransferModal(true);
+      return;
+    }
+
     await leaveGame();
     router.replace('/multiplayer/summary');
+  };
+
+  const handleConfirmHostTransfer = async () => {
+    const nextHostId = selectedHostId ?? defaultHostCandidateId;
+    if (!nextHostId || isTransferringHost) return;
+
+    setIsTransferringHost(true);
+    try {
+      await transferHost(nextHostId);
+      await leaveGame();
+      setShowHostTransferModal(false);
+      router.replace('/multiplayer/summary');
+    } finally {
+      setIsTransferringHost(false);
+    }
   };
 
   const toggleDifficulty = (values: number[]) => {
@@ -145,39 +184,44 @@ export default function MultiplayerGameScreen() {
     <ThemedView style={[styles.gameContainer, { paddingTop: insets.top }]}>
       <QuizGameLayout
         title="Multiplayer"
-        subtitle={
-          <View style={styles.subtitleRow}>
-            <ThemedText style={[styles.subtitleText, { color: mutedColor }]}>
-              {players.length} player{players.length !== 1 ? 's' : ''}
-            </ThemedText>
-            <ThemedText style={[styles.subtitleDot, { color: mutedColor }]}>·</ThemedText>
-            <ThemedText style={[styles.subtitleText, { color: selfScore >= 0 ? successColor : errorColor }]}>
-              {selfScore} pts
-            </ThemedText>
-          </View>
-        }
-        headerRight={
-          <View style={styles.headerButtons}>
-            {isHost ? (
+        subtitle={null}
+        showHeader={false}
+        topAccessory={
+          <View style={[styles.gameHud, { borderColor, backgroundColor: surfaceColor }]}>
+            <View style={styles.hudStats}>
+              <ThemedText style={[styles.hudStat, { color: mutedColor }]}>
+                {players.length} player{players.length !== 1 ? 's' : ''}
+              </ThemedText>
+              <View style={[styles.hudDivider, { backgroundColor: borderColor }]} />
+              <ThemedText
+                type="defaultSemiBold"
+                style={[styles.hudScore, { color: selfScore >= 0 ? successColor : errorColor }]}>
+                {selfScore} pts
+              </ThemedText>
+            </View>
+            <View style={styles.hudActions}>
+              {isHost ? (
+                <Pressable
+                  onPress={handleOpenSettings}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open game settings"
+                  testID="game-settings-button"
+                  style={[styles.hudButton, { borderColor }]}>
+                  <ThemedText style={[styles.hudButtonText, { color: textColor }]}>Settings</ThemedText>
+                </Pressable>
+              ) : null}
               <Pressable
-                onPress={handleOpenSettings}
+                onPress={handleLeave}
                 accessibilityRole="button"
-                accessibilityLabel="Open game settings"
-                testID="game-settings-button"
-                style={[styles.headerButton, { borderColor }]}>
-                <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>Settings</ThemedText>
+                accessibilityLabel="Leave game"
+                testID="game-leave-button"
+                style={[styles.hudButton, { borderColor }]}>
+                <ThemedText style={[styles.hudButtonText, { color: textColor }]}>Leave</ThemedText>
               </Pressable>
-            ) : null}
-            <Pressable
-              onPress={handleLeave}
-              accessibilityRole="button"
-              accessibilityLabel="Leave game"
-              testID="game-leave-button"
-              style={[styles.headerButton, { borderColor }]}>
-              <ThemedText style={{ color: textColor, fontSize: responsiveFont(14) }}>Leave</ThemedText>
-            </Pressable>
+            </View>
           </View>
         }
+        questionOnly
         question={currentQuestion}
         isLoading={isLoading}
         error={status === 'ended' ? 'Game ended' : undefined}
@@ -201,6 +245,7 @@ export default function MultiplayerGameScreen() {
         onNoBuzzTimeout={noBuzzTimeout}
         promptText={promptText}
         onNext={startNextQuestion}
+        bottomPadding={spacing.sm}
         overlay={
           showOverlay ? (
             otherPlayerChangingSettings || waitingForHostToStart ? (
@@ -292,6 +337,17 @@ export default function MultiplayerGameScreen() {
           </ThemedView>
         </View>
       </Modal>
+
+      <HostTransferModal
+        visible={showHostTransferModal}
+        players={hostTransferCandidates}
+        selectedPlayerId={selectedHostId}
+        defaultPlayerId={defaultHostCandidateId}
+        isSubmitting={isTransferringHost}
+        onSelectPlayer={setSelectedHostId}
+        onCancel={() => setShowHostTransferModal(false)}
+        onConfirm={handleConfirmHostTransfer}
+      />
     </ThemedView>
   );
 }
@@ -300,26 +356,45 @@ const styles = StyleSheet.create({
   gameContainer: {
     flex: 1,
   },
-  headerButtons: {
+  gameHud: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(18),
+    paddingHorizontal: spacing.md,
+    paddingVertical: verticalScale(10),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  hudStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexShrink: 1,
+  },
+  hudStat: {
+    fontSize: responsiveFont(13),
+  },
+  hudDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: verticalScale(16),
+  },
+  hudScore: {
+    fontSize: responsiveFont(14),
+  },
+  hudActions: {
     flexDirection: 'row',
     gap: spacing.xs,
   },
-  headerButton: {
+  hudButton: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: scale(8),
+    borderRadius: scale(999),
     paddingHorizontal: spacing.sm,
     paddingVertical: verticalScale(6),
   },
-  subtitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  subtitleText: {
-    fontSize: responsiveFont(14),
-  },
-  subtitleDot: {
-    fontSize: responsiveFont(14),
+  hudButtonText: {
+    fontSize: responsiveFont(13),
+    fontWeight: '600',
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
