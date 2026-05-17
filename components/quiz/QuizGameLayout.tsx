@@ -138,6 +138,7 @@ export function QuizGameLayout({
   const brandColor = useThemeColor({}, 'brand');
   const mutedColor = useThemeColor({}, 'muted');
   const isBuzzerControlled = isCurrentPlayerBuzzer !== undefined;
+  const shouldUseBuzzTimer = isBuzzerControlled || buzzTimerEnd != null;
   const activeHasBuzzed = isBuzzerControlled ? isCurrentPlayerBuzzer : hasBuzzed;
   const isQueued = buzzQueuePosition != null;
 
@@ -154,14 +155,14 @@ export function QuizGameLayout({
   const [localBuzzEnd, setLocalBuzzEnd] = useState<number | null>(null);
 
   useEffect(() => {
-    if (activeHasBuzzed) {
+    if (shouldUseBuzzTimer && activeHasBuzzed) {
       setLocalBuzzEnd(Date.now() + SCORING.BUZZ_TIMEOUT_SECONDS * 1000);
     } else {
       setLocalBuzzEnd(null);
     }
-  }, [activeHasBuzzed]);
+  }, [activeHasBuzzed, shouldUseBuzzTimer]);
 
-  const effectiveTimerEnd = buzzTimerEnd ?? localBuzzEnd;
+  const effectiveTimerEnd = shouldUseBuzzTimer ? buzzTimerEnd ?? localBuzzEnd : null;
 
   // Buzz timer countdown
   const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
@@ -310,7 +311,6 @@ export function QuizGameLayout({
       setHasBuzzed(true);
       setAnswer('');
       submittedRef.current = false;
-      setLocalBuzzEnd(Date.now() + SCORING.BUZZ_TIMEOUT_SECONDS * 1000);
     }
   }, [isBuzzerControlled, promptText, activeHasBuzzed, isPlaying, result]);
 
