@@ -10,6 +10,12 @@ type RoomCreationResponse = {
   host_token: string;
 };
 
+type PushableRealtimeChannel = RealtimeChannel & {
+  channelAdapter?: {
+    canPush: () => boolean;
+  };
+};
+
 /**
  * Supabase Realtime transport for multiplayer communication.
  *
@@ -30,6 +36,7 @@ export class SupabaseTransport implements MultiplayerTransport {
   private playerId: string | null = null;
   private playerName: string | null = null;
   private hostToken: string | null = null;
+  private subscriptionPromise: Promise<void> | null = null;
 
   constructor() {
     const url = Constants.expoConfig?.extra?.supabaseUrl;
@@ -71,7 +78,8 @@ export class SupabaseTransport implements MultiplayerTransport {
 
     // Subscribe to Realtime channel — wait for confirmation before proceeding
     try {
-      await this.subscribeToChannel(code);
+      this.subscriptionPromise = this.subscribeToChannel(code);
+      await this.subscriptionPromise;
     } catch (error) {
       await this.deleteHostedRoom();
       this.sessionId = null;
@@ -96,6 +104,7 @@ export class SupabaseTransport implements MultiplayerTransport {
     this.sessionId = code;
 
     const subscriptionPromise = this.subscribeToChannel(code);
+    this.subscriptionPromise = subscriptionPromise;
     subscriptionPromise.catch(() => undefined);
 
     try {
@@ -118,10 +127,21 @@ export class SupabaseTransport implements MultiplayerTransport {
 
   async send(event: GameEvent): Promise<void> {
     if (!this.channel) return;
-    await this.channel.send({
+    await this.subscriptionPromise;
+
+    const payload = { event, senderId: this.playerId };
+    const channel = this.channel;
+    const canPush = (channel as PushableRealtimeChannel).channelAdapter?.canPush?.() ?? channel.state === 'joined';
+
+    if (!canPush) {
+      await channel.httpSend('relay', payload);
+      return;
+    }
+
+    await channel.send({
       type: 'broadcast',
       event: 'relay',
-      payload: { event, senderId: this.playerId },
+      payload,
     });
   }
 
@@ -205,6 +225,7 @@ export class SupabaseTransport implements MultiplayerTransport {
     if (!this.channel) return;
     const channel = this.channel;
     this.channel = null;
+    this.subscriptionPromise = null;
     await this.supabase.removeChannel(channel);
   }
 

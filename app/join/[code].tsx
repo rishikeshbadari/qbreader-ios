@@ -1,9 +1,10 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRootNavigation, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet } from 'react-native';
 
 import { ThemedView } from '@/components/ThemedView';
 import { useThemeColor } from '@/hooks/useThemeColor';
+import { resetToMultiplayerHome } from '@/utils/navigation';
 
 /**
  * Deep link handler: quizbowl://join/{CODE}
@@ -14,15 +15,16 @@ import { useThemeColor } from '@/hooks/useThemeColor';
 export default function JoinDeepLink() {
   const { code } = useLocalSearchParams<{ code: string }>();
   const router = useRouter();
+  const rootNavigation = useRootNavigation();
   const brandColor = useThemeColor({}, 'brand');
 
   useEffect(() => {
     if (code) {
       router.replace({ pathname: '/multiplayer/join', params: { code: code.toUpperCase() } });
     } else {
-      router.replace('/multiplayer');
+      resetToMultiplayerHome(rootNavigation, () => router.replace('/(tabs)/multiplayer'));
     }
-  }, [code, router]);
+  }, [code, rootNavigation, router]);
 
   return (
     <ThemedView style={styles.container}>

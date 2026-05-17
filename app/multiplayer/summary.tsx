@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useRootNavigation, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { useThemeColor } from '@/hooks/useThemeColor';
 import { SCORING, type GameSummary } from '@/types/multiplayer';
 import type { AnswerResult } from '@/types/qb';
 import { normalizeDirective } from '@/utils/directives';
+import { resetToMultiplayerHome } from '@/utils/navigation';
 import { saveMatchToHistory } from '@/app/multiplayer/history';
 import { responsiveFont, scale, spacing, verticalScale, MIN_TOUCH_TARGET } from '@/utils/responsive';
 
@@ -80,6 +81,7 @@ export default function MultiplayerSummaryScreen() {
   const insets = useSafeAreaInsets();
   const { summary } = useMultiplayer();
   const router = useRouter();
+  const rootNavigation = useRootNavigation();
 
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
@@ -88,7 +90,7 @@ export default function MultiplayerSummaryScreen() {
   const successColor = useThemeColor({}, 'success');
   const errorColor = useThemeColor({}, 'error');
 
-  const handleDone = () => router.replace('/(tabs)/multiplayer');
+  const handleDone = () => resetToMultiplayerHome(rootNavigation, () => router.replace('/(tabs)/multiplayer'));
   const playerNames = summary?.players.map(p => p.name).join(', ') ?? '';
   const scores = useMemo(() => summary ? computeScores(summary) : [], [summary]);
 

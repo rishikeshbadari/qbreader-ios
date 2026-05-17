@@ -93,6 +93,7 @@ export type StateSyncPayload = {
   players: Player[];
   hostId: string;
   settings: GameSettings;
+  pendingSettings?: GameSettings | null;
   status: SessionStatus;
   currentQuestion?: Tossup;
   powerMarkWordIndex?: number;
@@ -123,7 +124,7 @@ export type GameEvent =
   | { type: 'game:pause'; playerId?: string; playerName?: string; pausedAt?: number; pausedWordIndex?: number }
   | { type: 'game:resume'; resumedAt?: number }
   | { type: 'game:end'; summary?: GameSummary }
-  | { type: 'game:settings'; settings: GameSettings }
+  | { type: 'game:settings'; settings: GameSettings; deferred?: boolean; lobby?: boolean }
   | { type: 'question:new'; tossup: Tossup; powerMarkWordIndex?: number; revealStartTime?: number }
   | { type: 'question:preload'; tossup: Tossup; powerMarkWordIndex?: number; settingsKey?: string }
   | { type: 'question:reveal'; revealStartTime: number }

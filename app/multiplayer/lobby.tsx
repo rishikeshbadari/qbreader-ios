@@ -1,21 +1,52 @@
-import { useRouter } from 'expo-router';
+import { useRootNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Animated, FlatList, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Slider from '@react-native-community/slider';
 
+import { ChipSelector } from '@/components/quiz/ChipSelector';
 import { getHostTransferCandidates, HostTransferModal } from '@/components/multiplayer/HostTransferModal';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { GameCodeDisplay } from '@/components/multiplayer/GameCodeDisplay';
 import { PlayerListItem } from '@/components/multiplayer/PlayerListItem';
 import { useMultiplayer } from '@/context/MultiplayerContext';
+import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
-import { MAX_PLAYERS } from '@/types/multiplayer';
+import { MAX_PLAYERS, type GameSettings } from '@/types/multiplayer';
+import { resetToMultiplayerHome } from '@/utils/navigation';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
+
+function sortedNumberKey(values: number[]): string {
+  return [...values].sort((left, right) => left - right).join(',');
+}
+
+function sortedStringKey(values: string[]): string {
+  return [...values].sort().join(',');
+}
+
+function areSettingsEqual(left: GameSettings | null | undefined, right: GameSettings): boolean {
+  if (!left) return false;
+  return (
+    sortedNumberKey(left.difficulties) === sortedNumberKey(right.difficulties) &&
+    sortedStringKey(left.categories) === sortedStringKey(right.categories) &&
+    left.revealSpeed === right.revealSpeed
+  );
+}
+
+function getSelectedDifficultyGroupCount(settings: GameSettings | null, options: { values: number[] }[]): number {
+  if (!settings) return 0;
+  const selectedValues = new Set(settings.difficulties);
+  const selectedGroups = options.filter(option =>
+    option.values.every(value => selectedValues.has(value))
+  );
+  return selectedGroups.length || settings.difficulties.length;
+}
 
 export default function LobbyScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const rootNavigation = useRootNavigation();
   const {
     gameCode,
     status,
@@ -34,12 +65,15 @@ export default function LobbyScreen() {
     transferHost,
     startGameCountdown,
     leaveGame,
+    updateSettings,
   } = useMultiplayer();
+  const { availableCategories, availableDifficulties, revealSpeed } = useSettings();
 
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
   const surfaceColor = useThemeColor({}, 'surface');
   const mutedColor = useThemeColor({}, 'muted');
+  const textColor = useThemeColor({}, 'text');
 
   const isSelfReady = selfPlayer ? readyPlayers.includes(selfPlayer.id) : false;
   const readyCount = readyPlayers.length;
@@ -57,6 +91,10 @@ export default function LobbyScreen() {
   const [showHostTransferModal, setShowHostTransferModal] = useState(false);
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
   const [isTransferringHost, setIsTransferringHost] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [tempCategories, setTempCategories] = useState<string[]>([]);
+  const [tempDifficulties, setTempDifficulties] = useState<number[]>([]);
+  const [tempSpeed, setTempSpeed] = useState(0.5);
 
   useEffect(() => {
     if (showHostTransferModal) {
@@ -70,6 +108,12 @@ export default function LobbyScreen() {
       router.replace('/multiplayer/game');
     }
   }, [status, router]);
+
+  useEffect(() => {
+    if (!gameCode && status !== 'ended') {
+      resetToMultiplayerHome(rootNavigation, () => router.replace('/(tabs)/multiplayer'));
+    }
+  }, [gameCode, rootNavigation, status, router]);
 
   // Countdown animation
   const countdownOpacity = useRef(new Animated.Value(1)).current;
@@ -100,15 +144,15 @@ export default function LobbyScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Leave',
-          style: 'destructive',
-          onPress: async () => {
-            await leaveGame();
-            router.replace('/multiplayer');
+            style: 'destructive',
+            onPress: async () => {
+              await leaveGame();
+              resetToMultiplayerHome(rootNavigation, () => router.replace('/(tabs)/multiplayer'));
+            },
           },
-        },
       ],
     );
-  }, [defaultHostCandidateId, hostTransferCandidates.length, isHost, leaveGame, router]);
+  }, [defaultHostCandidateId, hostTransferCandidates.length, isHost, leaveGame, rootNavigation, router]);
 
   const handleConfirmHostTransfer = useCallback(async () => {
     const nextHostId = selectedHostId ?? defaultHostCandidateId;
@@ -119,11 +163,11 @@ export default function LobbyScreen() {
       await transferHost(nextHostId);
       await leaveGame();
       setShowHostTransferModal(false);
-      router.replace('/multiplayer');
+      resetToMultiplayerHome(rootNavigation, () => router.replace('/(tabs)/multiplayer'));
     } finally {
       setIsTransferringHost(false);
     }
-  }, [defaultHostCandidateId, isTransferringHost, leaveGame, router, selectedHostId, transferHost]);
+  }, [defaultHostCandidateId, isTransferringHost, leaveGame, rootNavigation, router, selectedHostId, transferHost]);
 
   const handleKick = useCallback((playerId: string, playerName: string) => {
     Alert.alert(
@@ -147,12 +191,54 @@ export default function LobbyScreen() {
     );
   }, [transferHost]);
 
+  const handleOpenSettings = useCallback(() => {
+    if (!isHost) return;
+    setTempCategories(settings?.categories ?? availableCategories.map(category => category.name));
+    setTempDifficulties(settings?.difficulties ?? availableDifficulties.flatMap(difficulty => difficulty.values));
+    setTempSpeed(settings?.revealSpeed ?? revealSpeed);
+    setShowSettingsModal(true);
+  }, [availableCategories, availableDifficulties, isHost, revealSpeed, settings]);
+
+  const handleApplySettings = useCallback(async () => {
+    const nextSettings: GameSettings = {
+      categories: tempCategories.length ? tempCategories : availableCategories.map(category => category.name),
+      difficulties: tempDifficulties.length ? tempDifficulties : availableDifficulties.flatMap(difficulty => difficulty.values),
+      revealSpeed: tempSpeed,
+    };
+
+    setShowSettingsModal(false);
+    if (areSettingsEqual(settings, nextSettings)) return;
+    await updateSettings(nextSettings, { lobbyOnly: true });
+  }, [availableCategories, availableDifficulties, settings, tempCategories, tempDifficulties, tempSpeed, updateSettings]);
+
+  const toggleDifficulty = useCallback((values: number[]) => {
+    setTempDifficulties(current => {
+      const isSelected = values.every(value => current.includes(value));
+      if (isSelected) {
+        const next = current.filter(value => !values.includes(value));
+        return next.length > 0 ? next : values;
+      }
+      return [...new Set([...current, ...values])];
+    });
+  }, []);
+
+  const toggleCategory = useCallback((name: string) => {
+    setTempCategories(current => {
+      if (current.includes(name)) {
+        const next = current.filter(category => category !== name);
+        return next.length > 0 ? next : [name];
+      }
+      return [...current, name].sort();
+    });
+  }, []);
+
   const speedLabel =
     (settings?.revealSpeed ?? 0.5) >= 0.95 ? 'Instant'
     : (settings?.revealSpeed ?? 0.5) >= 0.7 ? 'Fast'
     : (settings?.revealSpeed ?? 0.5) >= 0.4 ? 'Moderate'
     : (settings?.revealSpeed ?? 0.5) >= 0.2 ? 'Slow'
     : 'Very slow';
+  const selectedDifficultyGroupCount = getSelectedDifficultyGroupCount(settings, availableDifficulties);
 
   // Countdown overlay
   if (countdownSeconds !== null) {
@@ -235,11 +321,26 @@ export default function LobbyScreen() {
         {/* Settings Summary */}
         {settings && (
           <View style={[styles.settingsSection, { borderColor, backgroundColor: surfaceColor }]}>
-            <ThemedText type="subtitle" style={styles.sectionTitle}>Settings</ThemedText>
+            <View style={styles.sectionHeaderRow}>
+              <ThemedText type="subtitle" style={styles.sectionTitle}>Settings</ThemedText>
+              {isHost ? (
+                <Pressable
+                  onPress={handleOpenSettings}
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit lobby settings"
+                  testID="lobby-settings-edit"
+                  style={({ pressed }) => [
+                    styles.editSettingsButton,
+                    { borderColor, opacity: pressed ? 0.7 : 1 },
+                  ]}>
+                  <ThemedText style={[styles.editSettingsLabel, { color: brandColor }]}>Edit</ThemedText>
+                </Pressable>
+              ) : null}
+            </View>
             <View style={styles.settingsRow}>
               <ThemedText style={[styles.settingsLabel, { color: mutedColor }]}>Difficulties</ThemedText>
               <ThemedText style={styles.settingsValue} numberOfLines={1}>
-                {settings.difficulties.length} selected
+                {selectedDifficultyGroupCount} selected
               </ThemedText>
             </View>
             <View style={styles.settingsRow}>
@@ -318,6 +419,69 @@ export default function LobbyScreen() {
         onCancel={() => setShowHostTransferModal(false)}
         onConfirm={handleConfirmHostTransfer}
       />
+
+      <Modal visible={showSettingsModal} transparent animationType="slide" onRequestClose={() => setShowSettingsModal(false)}>
+        <View style={styles.modalBackdrop}>
+          <ThemedView style={[styles.modalCard, { borderColor, paddingBottom: insets.bottom + spacing.lg }]}>
+            <View style={styles.modalHeader}>
+              <ThemedText type="subtitle">Game Settings</ThemedText>
+              <ThemedText style={[styles.modalSubtitle, { color: mutedColor }]}>
+                These settings apply when the game starts.
+              </ThemedText>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalContent}>
+              <ChipSelector
+                kind="difficulty"
+                options={availableDifficulties}
+                selected={tempDifficulties}
+                onToggle={toggleDifficulty}
+                label="Difficulty"
+              />
+              <ChipSelector
+                kind="category"
+                options={availableCategories}
+                selected={tempCategories}
+                onToggle={toggleCategory}
+                label="Categories"
+              />
+
+              <View style={styles.modalSection}>
+                <ThemedText type="defaultSemiBold" style={styles.modalSectionTitle}>Reveal Speed</ThemedText>
+                <Slider
+                  value={tempSpeed}
+                  minimumValue={0}
+                  maximumValue={1}
+                  step={0.05}
+                  onValueChange={setTempSpeed}
+                  minimumTrackTintColor={brandColor}
+                  maximumTrackTintColor={borderColor}
+                  thumbTintColor={brandColor}
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setShowSettingsModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel settings"
+                testID="lobby-settings-cancel"
+                style={[styles.secondaryButton, { borderColor }]}>
+                <ThemedText style={{ color: textColor }}>Cancel</ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={() => void handleApplySettings()}
+                accessibilityRole="button"
+                accessibilityLabel="Apply lobby settings"
+                testID="lobby-settings-apply"
+                style={[styles.applyButton, { backgroundColor: brandColor }]}>
+                <ThemedText style={styles.applyLabel}>Apply</ThemedText>
+              </Pressable>
+            </View>
+          </ThemedView>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -382,6 +546,22 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: responsiveFont(16),
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  editSettingsButton: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(999),
+    paddingHorizontal: spacing.sm,
+    paddingVertical: verticalScale(4),
+  },
+  editSettingsLabel: {
+    fontSize: responsiveFont(13),
+    fontWeight: '600',
+  },
   playerList: {
     flex: 1,
   },
@@ -439,5 +619,58 @@ const styles = StyleSheet.create({
   hintSlot: {
     minHeight: verticalScale(18),
     justifyContent: 'center',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    borderTopLeftRadius: scale(16),
+    borderTopRightRadius: scale(16),
+    padding: spacing.lg,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  modalSubtitle: {
+    fontSize: responsiveFont(14),
+  },
+  modalContent: {
+    gap: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  modalSection: {
+    gap: spacing.sm,
+  },
+  modalSectionTitle: {
+    fontSize: responsiveFont(15),
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  secondaryButton: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(10),
+    paddingHorizontal: spacing.md,
+    paddingVertical: verticalScale(10),
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+  },
+  applyButton: {
+    borderRadius: scale(10),
+    paddingHorizontal: spacing.lg,
+    paddingVertical: verticalScale(10),
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+  },
+  applyLabel: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });

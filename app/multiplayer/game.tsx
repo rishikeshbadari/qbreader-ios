@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useRootNavigation, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
@@ -20,6 +20,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import type { GameSettings } from '@/types/multiplayer';
+import { resetToMultiplayerHome } from '@/utils/navigation';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 function sortedNumberKey(values: number[]): string {
@@ -41,6 +42,7 @@ function areSettingsEqual(left: GameSettings | null | undefined, right: GameSett
 
 export default function MultiplayerGameScreen() {
   const router = useRouter();
+  const rootNavigation = useRootNavigation();
   const colorScheme = useColorScheme();
   const insets = useSafeAreaInsets();
 
@@ -50,6 +52,7 @@ export default function MultiplayerGameScreen() {
     players,
     allPlayers,
     settings,
+    pendingSettings,
     currentQuestion,
     currentResult,
     currentBuzzer,
@@ -89,9 +92,9 @@ export default function MultiplayerGameScreen() {
 
   useEffect(() => {
     if (!sessionId && status !== 'ended') {
-      router.replace('/multiplayer');
+      resetToMultiplayerHome(rootNavigation, () => router.replace('/(tabs)/multiplayer'));
     }
-  }, [sessionId, status, router]);
+  }, [rootNavigation, sessionId, status, router]);
 
   const { availableCategories, availableDifficulties, revealSpeed } = useSettings();
   const [showSettings, setShowSettings] = useState(false);
@@ -114,6 +117,8 @@ export default function MultiplayerGameScreen() {
 
   const isPlaying = status === 'playing';
   const selfScore = selfPlayer ? (scores[selfPlayer.id] ?? 0) : 0;
+  const effectiveSettings = pendingSettings ?? settings;
+  const hasActiveUnresolvedQuestion = Boolean(status !== 'ended' && currentQuestion && !currentResult);
   const settingsLockedForActiveBuzz = Boolean(
     isPlaying &&
     currentQuestion &&
@@ -135,9 +140,9 @@ export default function MultiplayerGameScreen() {
   const handleOpenSettings = async () => {
     if (!isHost || settingsLockedForActiveBuzz) return;
     await pauseGame();
-    setTempCategories(settings?.categories ?? availableCategories.map(c => c.name));
-    setTempDifficulties(settings?.difficulties ?? availableDifficulties.flatMap(d => d.values));
-    setTempSpeed(settings?.revealSpeed ?? revealSpeed);
+    setTempCategories(effectiveSettings?.categories ?? availableCategories.map(c => c.name));
+    setTempDifficulties(effectiveSettings?.difficulties ?? availableDifficulties.flatMap(d => d.values));
+    setTempSpeed(effectiveSettings?.revealSpeed ?? revealSpeed);
     setShowSettings(true);
   };
 
@@ -150,7 +155,13 @@ export default function MultiplayerGameScreen() {
 
     setShowSettings(false);
 
-    if (areSettingsEqual(settings, nextSettings)) {
+    if (areSettingsEqual(effectiveSettings, nextSettings)) {
+      await resumeGame();
+      return;
+    }
+
+    if (hasActiveUnresolvedQuestion) {
+      await updateSettings(nextSettings, { deferUntilNextQuestion: true });
       await resumeGame();
       return;
     }
@@ -336,7 +347,6 @@ export default function MultiplayerGameScreen() {
           ) : undefined
         }
       />
-
       {/* Settings Modal */}
       <Modal visible={showSettings} transparent animationType="slide" onRequestClose={handleCancelSettings}>
         <View style={styles.modalBackdrop}>

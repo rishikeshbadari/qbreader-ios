@@ -64,6 +64,20 @@ function buildSettingsKey(settings: GameSettings): string {
   return `${[...settings.difficulties].sort((a, b) => a - b).join(',')}_${[...settings.categories].sort().join(',')}_${settings.revealSpeed}`;
 }
 
+function uniquePlayersById(players: Player[]): Player[] {
+  const order: string[] = [];
+  const byId = new Map<string, Player>();
+
+  for (const player of players) {
+    if (!byId.has(player.id)) {
+      order.push(player.id);
+    }
+    byId.set(player.id, { ...byId.get(player.id), ...player });
+  }
+
+  return order.map(id => byId.get(id)!);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Context Type
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,9 +87,11 @@ type MultiplayerContextValue = {
   sessionId: string | null;
   gameCode: string | null;
   status: SessionStatus;
+  forcedExitReason: 'kicked' | null;
   players: Player[];
   allPlayers: Player[];
   settings: GameSettings | null;
+  pendingSettings: GameSettings | null;
   currentQuestion: Tossup | null;
   currentResult: AnswerResult | null;
   currentBuzzer: Player | null;
@@ -112,13 +128,15 @@ type MultiplayerContextValue = {
   noBuzzTimeout: (questionId?: string) => Promise<void>;
   pauseGame: () => Promise<void>;
   resumeGame: () => Promise<void>;
-  updateSettings: (settings: GameSettings) => Promise<void>;
+  updateSettings: (settings: GameSettings, options?: { deferUntilNextQuestion?: boolean; lobbyOnly?: boolean }) => Promise<void>;
   endGame: () => Promise<void>;
   leaveGame: () => Promise<void>;
   toggleReady: () => Promise<void>;
   kickPlayer: (playerId: string) => Promise<void>;
   transferHost: (newHostId: string) => Promise<void>;
   startGameCountdown: () => void;
+  acknowledgeForcedExit: () => void;
+  completeForcedExit: () => void;
 };
 
 const MultiplayerContext = createContext<MultiplayerContextValue | null>(null);
@@ -141,9 +159,11 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [gameCode, setGameCode] = useState<string | null>(null);
   const [status, setStatus] = useState<SessionStatus>('idle');
+  const [forcedExitReason, setForcedExitReason] = useState<'kicked' | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [allPlayers, setAllPlayers] = useState<Player[]>([]);
   const [settings, setSettings] = useState<GameSettings | null>(null);
+  const [pendingSettings, setPendingSettings] = useState<GameSettings | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<Tossup | null>(null);
   const [currentResult, setCurrentResult] = useState<AnswerResult | null>(null);
   const [currentBuzzer, setCurrentBuzzer] = useState<Player | null>(null);
@@ -234,13 +254,13 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
   // Refs for accessing current values in callbacks
   const stateRef = useRef({
-    players, settings, currentQuestion, currentResult, currentBuzzer, selfPlayer,
+    players, settings, pendingSettings, currentQuestion, currentResult, currentBuzzer, selfPlayer,
     lockedOutPlayers, summary, hostId, scores, powerMarkWordIndex,
     status, sessionId, allPlayers, buzzWordIndex, gameCode, readyPlayers, revealStartTime,
     isBuzzLocked, buzzQueue,
   });
   stateRef.current = {
-    players, settings, currentQuestion, currentResult, currentBuzzer, selfPlayer,
+    players, settings, pendingSettings, currentQuestion, currentResult, currentBuzzer, selfPlayer,
     lockedOutPlayers, summary, hostId, scores, powerMarkWordIndex,
     status, sessionId, allPlayers, buzzWordIndex, gameCode, readyPlayers, revealStartTime,
     isBuzzLocked, buzzQueue,
@@ -355,9 +375,11 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setSessionId(null);
     setGameCode(null);
     setStatus('idle');
+    setForcedExitReason(null);
     setPlayers([]);
     setAllPlayers([]);
     setSettings(null);
+    setPendingSettings(null);
     setCurrentQuestion(null);
     setCurrentResult(null);
     setCurrentBuzzer(null);
@@ -413,6 +435,23 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       questions[lastIdx] = { ...lastQ, buzzes, winnerId: buzz.result?.directive === 'accept' ? buzz.playerId : lastQ.winnerId };
       return { ...prev, questions };
     });
+  }, []);
+
+  const applyPendingSettingsForNextQuestion = useCallback(() => {
+    const nextSettings = stateRef.current.pendingSettings;
+    if (!nextSettings) {
+      return stateRef.current.settings;
+    }
+
+    setSettings(nextSettings);
+    setPendingSettings(null);
+    setSummary(prev => prev ? { ...prev, settings: nextSettings } : prev);
+    stateRef.current = {
+      ...stateRef.current,
+      settings: nextSettings,
+      pendingSettings: null,
+    };
+    return nextSettings;
   }, []);
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -655,10 +694,10 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
    * already has the data — zero perceived latency on reveal.
    */
   const prefetchAndDistribute = useCallback(() => {
-    const { settings } = stateRef.current;
-    if (!settings) return;
+    const questionSettings = stateRef.current.pendingSettings ?? stateRef.current.settings;
+    if (!questionSettings) return;
 
-    const settingsKey = buildSettingsKey(settings);
+    const settingsKey = buildSettingsKey(questionSettings);
     if (
       prefetchedRef.current?.settingsKey === settingsKey ||
       preloadedQuestionRef.current?.settingsKey === settingsKey ||
@@ -673,11 +712,11 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     prefetchInFlightKeyRef.current = settingsKey;
 
     fetchRandomTossup(controller.signal, {
-      difficulties: settings.difficulties,
-      categories: settings.categories,
+      difficulties: questionSettings.difficulties,
+      categories: questionSettings.categories,
     }).then(tossup => {
       if (controller.signal.aborted) return;
-      const currentSettings = stateRef.current.settings;
+      const currentSettings = stateRef.current.pendingSettings ?? stateRef.current.settings;
       if (!currentSettings || buildSettingsKey(currentSettings) !== settingsKey) return;
 
       const pmIndex = findPowerMarkWordIndex(tossup.question);
@@ -707,11 +746,11 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
    * Activate the preloaded question on the coordinator's device and send
    * a lightweight "reveal" signal so all other devices start simultaneously.
    */
-  const revealPreloadedQuestion = useCallback(() => {
+  const revealPreloadedQuestion = useCallback((questionSettings?: GameSettings | null) => {
     const preloaded = preloadedQuestionRef.current;
     if (!preloaded) return false;
-    const { settings } = stateRef.current;
-    if (settings && preloaded.settingsKey && preloaded.settingsKey !== buildSettingsKey(settings)) {
+    const effectiveSettings = questionSettings ?? stateRef.current.pendingSettings ?? stateRef.current.settings;
+    if (effectiveSettings && preloaded.settingsKey && preloaded.settingsKey !== buildSettingsKey(effectiveSettings)) {
       preloadedQuestionRef.current = null;
       return false;
     }
@@ -755,11 +794,11 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
    * Used when no preloaded question is available (first question, settings changed).
    */
   const fetchAndBroadcastQuestion = useCallback(async () => {
-    const { settings } = stateRef.current;
-    if (!settings) return;
+    const questionSettings = applyPendingSettingsForNextQuestion();
+    if (!questionSettings) return;
 
     // Try the preloaded path first (zero latency)
-    if (revealPreloadedQuestion()) return;
+    if (revealPreloadedQuestion(questionSettings)) return;
 
     // Fallback: fetch now
     fetchAbortRef.current?.abort();
@@ -790,8 +829,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       const controller = new AbortController();
       fetchAbortRef.current = controller;
       tossup = await fetchRandomTossup(controller.signal, {
-        difficulties: settings.difficulties,
-        categories: settings.categories,
+        difficulties: questionSettings.difficulties,
+        categories: questionSettings.categories,
       });
       pmIndex = findPowerMarkWordIndex(tossup.question);
     } catch (err) {
@@ -812,7 +851,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
     // Pre-fetch + distribute next question to all devices
     prefetchAndDistribute();
-  }, [send, addQuestionToSummary, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, coordinatorTimeToLocal, getNextRevealStartTime, prefetchAndDistribute, revealPreloadedQuestion]);
+  }, [send, addQuestionToSummary, applyPendingSettingsForNextQuestion, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, coordinatorTimeToLocal, getNextRevealStartTime, prefetchAndDistribute, revealPreloadedQuestion]);
 
   const judgeAndBroadcastResult = useCallback(async (buzz: Buzz) => {
     const { currentQuestion, currentResult, lockedOutPlayers, players } = stateRef.current;
@@ -951,16 +990,13 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const handleEvent = useCallback((event: GameEvent) => {
     switch (event.type) {
       case 'player:join': {
-        setPlayers(prev => prev.some(p => p.id === event.player.id) ? prev : [...prev, event.player]);
+        setPlayers(prev => uniquePlayersById([...prev, event.player]));
 
         // Rule 3: Track in allPlayers
-        setAllPlayers(prev => prev.some(p => p.id === event.player.id)
-          ? prev
-          : [...prev, { ...event.player, status: 'active' as const }]
-        );
+        setAllPlayers(prev => uniquePlayersById([...prev, { ...event.player, status: 'active' as const }]));
 
-        setSummary(prev => prev && !prev.players.some(p => p.id === event.player.id)
-          ? { ...prev, players: [...prev.players, { ...event.player, status: 'active' as const }] }
+        setSummary(prev => prev
+          ? { ...prev, players: uniquePlayersById([...prev.players, { ...event.player, status: 'active' as const }]) }
           : prev
         );
 
@@ -982,10 +1018,12 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           (s.selfPlayer.id === s.hostId || isCoordinatorFn())
         );
         if (canSyncState) {
+          const syncedPlayers = uniquePlayersById([...s.players, event.player]);
           const syncPayload: StateSyncPayload = {
-            players: [...s.players, event.player],
+            players: syncedPlayers,
             hostId: s.hostId!,
             settings: s.settings!,
+            pendingSettings: s.pendingSettings,
             status: s.status,
             currentQuestion: s.currentQuestion ?? undefined,
             powerMarkWordIndex: s.powerMarkWordIndex,
@@ -1034,13 +1072,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       }
 
       case 'players:sync': {
-        setPlayers(prev => {
-          const merged = [...prev];
-          event.players.forEach(p => {
-            if (!merged.some(m => m.id === p.id)) merged.push(p);
-          });
-          return merged;
-        });
+        setPlayers(prev => uniquePlayersById([...prev, ...event.players]));
         if (event.hostId) setHostId(event.hostId);
         break;
       }
@@ -1058,15 +1090,24 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       case 'player:kick': {
         const { selfPlayer } = stateRef.current;
         if (selfPlayer && event.playerId === selfPlayer.id) {
-          // We got kicked — disconnect and reset
+          // Keep the current screen state intact during the pop animation.
           void transportRef.current.disconnect();
-          resetState();
+          setForcedExitReason('kicked');
           return;
         }
         setPlayers(prev => prev.filter(p => p.id !== event.playerId));
         setAllPlayers(prev => prev.map(p =>
           p.id === event.playerId ? { ...p, status: 'left' as const } : p
         ));
+        setSummary(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            players: prev.players.map(p =>
+              p.id === event.playerId ? { ...p, status: 'left' as const } : p
+            ),
+          };
+        });
         setReadyPlayers(prev => prev.filter(id => id !== event.playerId));
         removeFromBuzzQueue(event.playerId);
         break;
@@ -1096,6 +1137,12 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
       case 'game:start': {
         setSettings(event.settings);
+        setPendingSettings(null);
+        stateRef.current = {
+          ...stateRef.current,
+          settings: event.settings,
+          pendingSettings: null,
+        };
         setStatus('playing');
         setIsBuzzLocked(false);
         setLockedOutPlayers([]);
@@ -1129,13 +1176,33 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
       case 'game:settings': {
         // Rule 2: Apply settings from host to all players
-        setSettings(event.settings);
-        setSummary(prev => prev ? { ...prev, settings: event.settings } : prev);
         prefetchedRef.current = null;
         prefetchInFlightKeyRef.current = null;
         preloadedQuestionRef.current = null;
-        fetchAbortRef.current?.abort();
         prefetchAbortRef.current?.abort();
+        if (event.lobby) {
+          setPendingSettings(null);
+          setSettings(event.settings);
+          setSummary(prev => prev ? { ...prev, settings: event.settings } : prev);
+          stateRef.current = {
+            ...stateRef.current,
+            settings: event.settings,
+            pendingSettings: null,
+          };
+          break;
+        }
+        if (event.deferred) {
+          setPendingSettings(event.settings);
+          stateRef.current = { ...stateRef.current, pendingSettings: event.settings };
+          if (isCoordinatorFn()) {
+            prefetchAndDistribute();
+          }
+          break;
+        }
+        setPendingSettings(null);
+        setSettings(event.settings);
+        setSummary(prev => prev ? { ...prev, settings: event.settings } : prev);
+        fetchAbortRef.current?.abort();
         setCurrentQuestion(null);
         setCurrentResult(null);
         setCurrentBuzzer(null);
@@ -1174,6 +1241,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
       case 'question:new': {
         // Fallback path: question data arrives with the reveal signal
+        applyPendingSettingsForNextQuestion();
         setCurrentResult(null);
         setCurrentQuestion(event.tossup);
         setCurrentBuzzer(null);
@@ -1206,7 +1274,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       }
 
       case 'question:preload': {
-        const currentSettings = stateRef.current.settings;
+        const currentSettings = stateRef.current.pendingSettings ?? stateRef.current.settings;
         if (
           event.settingsKey &&
           currentSettings &&
@@ -1227,6 +1295,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         // "Go" signal — activate the preloaded question
         const preloaded = preloadedQuestionRef.current;
         if (preloaded) {
+          applyPendingSettingsForNextQuestion();
           preloadedQuestionRef.current = null;
           setCurrentResult(null);
           setCurrentQuestion(preloaded.tossup);
@@ -1477,16 +1546,17 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         if (!s.hostId || !s.settings) {
           break;
         }
-        setPlayers(s.players);
-        setAllPlayers(prev => {
-          const merged = [...prev];
-          s.players.forEach(p => {
-            if (!merged.some(m => m.id === p.id)) merged.push(p);
-          });
-          return merged;
-        });
+        const syncedPlayers = uniquePlayersById(s.players);
+        setPlayers(syncedPlayers);
+        setAllPlayers(prev => uniquePlayersById([...prev, ...syncedPlayers]));
         setHostId(s.hostId);
         setSettings(s.settings);
+        setPendingSettings(s.pendingSettings ?? null);
+        stateRef.current = {
+          ...stateRef.current,
+          settings: s.settings,
+          pendingSettings: s.pendingSettings ?? null,
+        };
         setStatus(s.status);
         if (s.currentQuestion) {
           setCurrentQuestion(s.currentQuestion);
@@ -1505,7 +1575,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         if (s.readyPlayers) setReadyPlayers(s.readyPlayers);
         setSummary(prev => ({
           sessionId: prev?.sessionId ?? stateRef.current.sessionId ?? '',
-          players: s.players,
+          players: syncedPlayers,
           hostId: s.hostId,
           settings: s.settings,
           questions: s.questionRecords,
@@ -1513,7 +1583,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         break;
       }
     }
-  }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, applyResumedRevealStartTime, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping, fetchAndBroadcastQuestion, getResumedRevealStartTime, judgeAndBroadcastResult, pauseRevealForBuzz, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState, prefetchAndDistribute, coordinatorTimeToLocal, applyGamePause, applyGameResume]);
+  }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, applyPendingSettingsForNextQuestion, applyResumedRevealStartTime, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping, fetchAndBroadcastQuestion, getResumedRevealStartTime, judgeAndBroadcastResult, pauseRevealForBuzz, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState, prefetchAndDistribute, coordinatorTimeToLocal, applyGamePause, applyGameResume]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Coordinator Transfer Detection (Rule 4)
@@ -1560,8 +1630,13 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setGameCode(code);
         // Server player list is informational — game-level player:join events handle state
       },
-      onPlayerJoined: (_playerId, _playerName) => {
-        // Handled by game-level player:join event
+      onPlayerJoined: (playerId, playerName) => {
+        const { selfPlayer } = stateRef.current;
+        if (!selfPlayer || playerId === selfPlayer.id) return;
+        handleEvent({
+          type: 'player:join',
+          player: { id: playerId, name: playerName || 'Player', status: 'active' },
+        });
       },
       onPlayerLeft: (playerId, reason) => {
         if (reason === 'disconnected') {
@@ -1613,7 +1688,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         console.warn('Room not found');
       },
     });
-  }, [removeFromBuzzQueue]);
+  }, [handleEvent, removeFromBuzzQueue]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Public Actions
@@ -1861,16 +1936,47 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   }, [applyGameResume, getCoordinatorNow, send]);
 
   // Rule 2: Broadcast settings to all players
-  const updateSettings = useCallback(async (newSettings: GameSettings) => {
+  const updateSettings = useCallback(async (newSettings: GameSettings, options?: { deferUntilNextQuestion?: boolean; lobbyOnly?: boolean }) => {
     const { selfPlayer, hostId: currentHostId } = stateRef.current;
     if (!selfPlayer || selfPlayer.id !== currentHostId) return;
-    setSettings(newSettings);
-    setSummary(prev => prev ? { ...prev, settings: newSettings } : prev);
+    const deferUntilNextQuestion = options?.deferUntilNextQuestion === true;
+    const lobbyOnly = options?.lobbyOnly === true;
     // Invalidate prefetch + preload since settings changed
     prefetchedRef.current = null;
     prefetchInFlightKeyRef.current = null;
     preloadedQuestionRef.current = null;
     prefetchAbortRef.current?.abort();
+    if (lobbyOnly) {
+      setPendingSettings(null);
+      setSettings(newSettings);
+      setSummary(prev => prev ? { ...prev, settings: newSettings } : prev);
+      stateRef.current = {
+        ...stateRef.current,
+        settings: newSettings,
+        pendingSettings: null,
+      };
+      await send({ type: 'game:settings', settings: newSettings, lobby: true });
+      return;
+    }
+
+    if (deferUntilNextQuestion) {
+      setPendingSettings(newSettings);
+      stateRef.current = { ...stateRef.current, pendingSettings: newSettings };
+      await send({ type: 'game:settings', settings: newSettings, deferred: true });
+      if (isCoordinatorFn()) {
+        prefetchAndDistribute();
+      }
+      return;
+    }
+
+    setPendingSettings(null);
+    setSettings(newSettings);
+    setSummary(prev => prev ? { ...prev, settings: newSettings } : prev);
+    stateRef.current = {
+      ...stateRef.current,
+      settings: newSettings,
+      pendingSettings: null,
+    };
     fetchAbortRef.current?.abort();
     setCurrentQuestion(null);
     setCurrentResult(null);
@@ -1888,7 +1994,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     clearBuzzQueue(true);
     setStatus('paused');
     await send({ type: 'game:settings', settings: newSettings });
-  }, [clearBuzzQueue, clearPendingTyping, send]);
+  }, [clearBuzzQueue, clearPendingTyping, isCoordinatorFn, prefetchAndDistribute, send]);
 
   // Host-only: force end game for everyone
   const endGame = useCallback(async () => {
@@ -1945,13 +2051,14 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
   const kickPlayer = useCallback(async (playerId: string) => {
     if (!isHostValue) return;
+    handleEvent({ type: 'player:kick', playerId });
     void send({ type: 'player:kick', playerId });
 
     // Also tell the server to kick (for WebSocket transport)
     if (transportRef.current instanceof SupabaseTransport) {
       transportRef.current.kickPlayer(playerId);
     }
-  }, [isHostValue, send]);
+  }, [handleEvent, isHostValue, send]);
 
   const transferHost = useCallback(async (newHostId: string) => {
     if (!isHostValue) return;
@@ -1997,6 +2104,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         void send({ type: 'game:start', settings: s.settings!, hostId: s.hostId! });
 
         // Trigger locally too
+        setPendingSettings(null);
         setStatus('playing');
         setIsBuzzLocked(false);
         setLockedOutPlayers([]);
@@ -2009,7 +2117,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         // Initialize summary for the new game
         setSummary({
           sessionId: s.sessionId ?? '',
-          players: s.players,
+          players: uniquePlayersById(s.players),
           hostId: s.hostId ?? '',
           settings: s.settings!,
           questions: [],
@@ -2022,6 +2130,14 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     }, 1000);
   }, [clearBuzzQueue, isCoordinatorFn, isHostValue, prefetchAndDistribute, send]);
 
+  const completeForcedExit = useCallback(() => {
+    resetState();
+  }, [resetState]);
+
+  const acknowledgeForcedExit = useCallback(() => {
+    setForcedExitReason(null);
+  }, []);
+
   // ───────────────────────────────────────────────────────────────────────────
   // Context Value
   // ───────────────────────────────────────────────────────────────────────────
@@ -2030,9 +2146,11 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     sessionId,
     gameCode,
     status,
+    forcedExitReason,
     players,
     allPlayers,
     settings,
+    pendingSettings,
     currentQuestion,
     currentResult,
     currentBuzzer,
@@ -2074,15 +2192,17 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     kickPlayer,
     transferHost,
     startGameCountdown,
+    acknowledgeForcedExit,
+    completeForcedExit,
   }), [
-    sessionId, gameCode, status, players, allPlayers, settings, currentQuestion, currentResult, currentBuzzer,
+    sessionId, gameCode, status, forcedExitReason, players, allPlayers, settings, pendingSettings, currentQuestion, currentResult, currentBuzzer,
     isLoading, isBuzzLocked, isSelfLockedOut, summary, selfPlayer,
     hostId, scores, isHostValue, isCoordinatorValue, buzzTimerEnd, revealStartTime,
     buzzerAnswer, buzzerResult, promptText, buzzQueuePosition, pausedByPlayerId, pausedByName,
     readyPlayers, connectionStatuses, countdownSeconds, playerColors,
     hostGame, joinGame, startNextQuestion, buzzIn, submitBuzzAnswer, sendBuzzTyping, syncRevealWordIndex, noBuzzTimeout,
     pauseGame, resumeGame, updateSettings, endGame, leaveGame,
-    toggleReady, kickPlayer, transferHost, startGameCountdown,
+    toggleReady, kickPlayer, transferHost, startGameCountdown, acknowledgeForcedExit, completeForcedExit,
   ]);
 
   return (
