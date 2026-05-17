@@ -44,6 +44,11 @@ export default function LobbyScreen() {
   const isSelfReady = selfPlayer ? readyPlayers.includes(selfPlayer.id) : false;
   const readyCount = readyPlayers.length;
   const canStart = isHost && readyCount >= 2;
+  const hostHint = players.length < 2
+    ? 'Waiting for more players to join...'
+    : canStart
+      ? 'Click Start Game above to begin!'
+      : 'At least 2 players must be ready';
   const hostTransferCandidates = useMemo(
     () => getHostTransferCandidates(players, allPlayers, selfPlayer?.id),
     [players, allPlayers, selfPlayer?.id],
@@ -190,67 +195,69 @@ export default function LobbyScreen() {
         <GameCodeDisplay code={gameCode} />
       </View>
 
-      {/* Player List */}
-      <View style={[styles.playerSection, { borderColor, backgroundColor: surfaceColor }]}>
-        <ThemedText type="subtitle" style={styles.sectionTitle}>Players</ThemedText>
-        <FlatList
-          data={players}
-          keyExtractor={p => p.id}
-          renderItem={({ item }) => (
-            <Pressable
-              onLongPress={() => {
-                if (isHost && item.id !== selfPlayer?.id) {
-                  handleTransferHost(item.id, item.name);
-                }
-              }}
-              delayLongPress={500}
-              accessibilityLabel={`Player ${item.name}${isHost && item.id !== selfPlayer?.id ? ' (long press to transfer host)' : ''}`}
-              testID={`player-row-${item.id}`}>
-              <PlayerListItem
-                name={item.name}
-                color={playerColors[item.id] ?? '#888'}
-                isHost={item.id === hostId}
-                isSelf={item.id === selfPlayer?.id}
-                isReady={readyPlayers.includes(item.id)}
-                connectionStatus={connectionStatuses[item.id]}
-                canKick={isHost && item.id !== selfPlayer?.id}
-                onKick={() => handleKick(item.id, item.name)}
-              />
-            </Pressable>
-          )}
-          style={styles.playerList}
-          contentContainerStyle={styles.playerListContent}
-          nestedScrollEnabled
-          scrollEnabled
-          showsVerticalScrollIndicator={players.length > 4}
-        />
+      <View style={styles.lobbyBody}>
+        {/* Player List */}
+        <View style={[styles.playerSection, { borderColor, backgroundColor: surfaceColor }]}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>Players</ThemedText>
+          <FlatList
+            data={players}
+            keyExtractor={p => p.id}
+            renderItem={({ item }) => (
+              <Pressable
+                onLongPress={() => {
+                  if (isHost && item.id !== selfPlayer?.id) {
+                    handleTransferHost(item.id, item.name);
+                  }
+                }}
+                delayLongPress={500}
+                accessibilityLabel={`Player ${item.name}${isHost && item.id !== selfPlayer?.id ? ' (long press to transfer host)' : ''}`}
+                testID={`player-row-${item.id}`}>
+                <PlayerListItem
+                  name={item.name}
+                  color={playerColors[item.id] ?? '#888'}
+                  isHost={item.id === hostId}
+                  isSelf={item.id === selfPlayer?.id}
+                  isReady={readyPlayers.includes(item.id)}
+                  connectionStatus={connectionStatuses[item.id]}
+                  canKick={isHost && item.id !== selfPlayer?.id}
+                  onKick={() => handleKick(item.id, item.name)}
+                />
+              </Pressable>
+            )}
+            style={styles.playerList}
+            contentContainerStyle={styles.playerListContent}
+            nestedScrollEnabled
+            scrollEnabled
+            showsVerticalScrollIndicator={players.length > 4}
+          />
+        </View>
+
+        {/* Settings Summary */}
+        {settings && (
+          <View style={[styles.settingsSection, { borderColor, backgroundColor: surfaceColor }]}>
+            <ThemedText type="subtitle" style={styles.sectionTitle}>Settings</ThemedText>
+            <View style={styles.settingsRow}>
+              <ThemedText style={[styles.settingsLabel, { color: mutedColor }]}>Difficulties</ThemedText>
+              <ThemedText style={styles.settingsValue} numberOfLines={1}>
+                {settings.difficulties.length} selected
+              </ThemedText>
+            </View>
+            <View style={styles.settingsRow}>
+              <ThemedText style={[styles.settingsLabel, { color: mutedColor }]}>Categories</ThemedText>
+              <ThemedText style={styles.settingsValue} numberOfLines={1}>
+                {settings.categories.length} selected
+              </ThemedText>
+            </View>
+            <View style={styles.settingsRow}>
+              <ThemedText style={[styles.settingsLabel, { color: mutedColor }]}>Speed</ThemedText>
+              <ThemedText style={styles.settingsValue}>{speedLabel}</ThemedText>
+            </View>
+          </View>
+        )}
       </View>
 
-      {/* Settings Summary */}
-      {settings && (
-        <View style={[styles.settingsSection, { borderColor, backgroundColor: surfaceColor }]}>
-          <ThemedText type="subtitle" style={styles.sectionTitle}>Settings</ThemedText>
-          <View style={styles.settingsRow}>
-            <ThemedText style={[styles.settingsLabel, { color: mutedColor }]}>Difficulties</ThemedText>
-            <ThemedText style={styles.settingsValue} numberOfLines={1}>
-              {settings.difficulties.length} selected
-            </ThemedText>
-          </View>
-          <View style={styles.settingsRow}>
-            <ThemedText style={[styles.settingsLabel, { color: mutedColor }]}>Categories</ThemedText>
-            <ThemedText style={styles.settingsValue} numberOfLines={1}>
-              {settings.categories.length} selected
-            </ThemedText>
-          </View>
-          <View style={styles.settingsRow}>
-            <ThemedText style={[styles.settingsLabel, { color: mutedColor }]}>Speed</ThemedText>
-            <ThemedText style={styles.settingsValue}>{speedLabel}</ThemedText>
-          </View>
-        </View>
-      )}
-
       {/* Bottom Actions */}
-      <View style={styles.bottomActions}>
+      <View style={[styles.bottomActions, { paddingBottom: insets.bottom + spacing.xl }]}>
         {isHost ? (
           <View style={styles.hostActions}>
             <Pressable
@@ -271,16 +278,11 @@ export default function LobbyScreen() {
                 Start Game
               </ThemedText>
             </Pressable>
-            {!canStart && players.length >= 2 && (
+            <View style={styles.hintSlot}>
               <ThemedText style={[styles.hint, { color: mutedColor }]}>
-                At least 2 players must be ready
+                {hostHint}
               </ThemedText>
-            )}
-            {players.length < 2 && (
-              <ThemedText style={[styles.hint, { color: mutedColor }]}>
-                Waiting for more players to join...
-              </ThemedText>
-            )}
+            </View>
           </View>
         ) : (
           <Pressable
@@ -294,7 +296,6 @@ export default function LobbyScreen() {
               {
                 backgroundColor: isSelfReady ? 'transparent' : brandColor,
                 borderColor: isSelfReady ? brandColor : 'transparent',
-                borderWidth: isSelfReady ? 2 : 0,
                 opacity: pressed ? 0.8 : 1,
               },
             ]}>
@@ -364,10 +365,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
+  lobbyBody: {
+    flex: 1,
+    minHeight: 0,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+  },
   playerSection: {
     flex: 1,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: scale(18),
     padding: spacing.md,
@@ -384,7 +389,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xs,
   },
   settingsSection: {
-    marginHorizontal: spacing.lg,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: scale(18),
     padding: spacing.md,
@@ -403,10 +407,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   bottomActions: {
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
   },
   hostActions: {
-    gap: spacing.sm,
+    gap: spacing.xs,
     alignItems: 'center',
   },
   startButton: {
@@ -418,6 +423,7 @@ const styles = StyleSheet.create({
   },
   readyButton: {
     borderRadius: scale(12),
+    borderWidth: scale(2),
     paddingVertical: verticalScale(14),
     alignItems: 'center',
     minHeight: MIN_TOUCH_TARGET,
@@ -429,5 +435,9 @@ const styles = StyleSheet.create({
   hint: {
     fontSize: responsiveFont(13),
     textAlign: 'center',
+  },
+  hintSlot: {
+    minHeight: verticalScale(18),
+    justifyContent: 'center',
   },
 });

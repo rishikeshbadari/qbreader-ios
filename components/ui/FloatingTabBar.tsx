@@ -393,13 +393,14 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: verticalScale(2),
+    gap: 0,
     paddingHorizontal: scale(2),
   },
   label: {
     fontSize: responsiveFont(10),
     fontWeight: '700',
     letterSpacing: 0.1,
+    marginTop: -verticalScale(1),
   },
   liquidIndicator: {
     position: 'absolute',
