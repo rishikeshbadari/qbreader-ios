@@ -1,4 +1,4 @@
-import { useRootNavigation, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,9 +10,10 @@ import { useThemeColor } from '@/hooks/useThemeColor';
 import { SCORING, type GameSummary } from '@/types/multiplayer';
 import type { AnswerResult } from '@/types/qb';
 import { normalizeDirective } from '@/utils/directives';
-import { resetToMultiplayerHome } from '@/utils/navigation';
 import { saveMatchToHistory } from '@/app/multiplayer/history';
 import { responsiveFont, scale, spacing, verticalScale, MIN_TOUCH_TARGET } from '@/utils/responsive';
+
+const SUMMARY_EXIT_RESET_DELAY_MS = 450;
 
 type PlayerScore = {
   id: string;
@@ -79,9 +80,8 @@ function buzzLabel(buzz: { isPower?: boolean; timedOut?: boolean }): string | nu
 
 export default function MultiplayerSummaryScreen() {
   const insets = useSafeAreaInsets();
-  const { summary } = useMultiplayer();
+  const { summary, completeForcedExit } = useMultiplayer();
   const router = useRouter();
-  const rootNavigation = useRootNavigation();
 
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
@@ -90,7 +90,14 @@ export default function MultiplayerSummaryScreen() {
   const successColor = useThemeColor({}, 'success');
   const errorColor = useThemeColor({}, 'error');
 
-  const handleDone = () => resetToMultiplayerHome(rootNavigation, () => router.replace('/(tabs)/multiplayer'));
+  const exitHandledRef = useRef(false);
+  const handleDone = () => {
+    if (exitHandledRef.current) return;
+
+    exitHandledRef.current = true;
+    router.dismissTo('/(tabs)/multiplayer');
+    setTimeout(completeForcedExit, SUMMARY_EXIT_RESET_DELAY_MS);
+  };
   const playerNames = summary?.players.map(p => p.name).join(', ') ?? '';
   const scores = useMemo(() => summary ? computeScores(summary) : [], [summary]);
 
@@ -105,7 +112,7 @@ export default function MultiplayerSummaryScreen() {
 
   if (!summary) {
     return (
-      <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
+      <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.xl }]}>
         <ThemedText type="title">No Game Data</ThemedText>
           <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
             There is no game summary to display.
@@ -120,7 +127,7 @@ export default function MultiplayerSummaryScreen() {
   }
 
   return (
-    <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
+    <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.xl }]}>
       <View style={styles.header}>
         <Pressable
           onPress={handleDone}
