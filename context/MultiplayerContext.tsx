@@ -458,6 +458,50 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     );
   }, []);
 
+  const pauseRevealForBuzz = useCallback((wordIndex?: number) => {
+    const pausedWordIndex = typeof wordIndex === 'number'
+      ? wordIndex
+      : getCurrentRevealWordIndex();
+
+    if (pausedWordIndex == null) {
+      return;
+    }
+
+    revealPausedWordIndexRef.current = pausedWordIndex;
+    currentRevealWordIndexRef.current = pausedWordIndex;
+  }, [getCurrentRevealWordIndex]);
+
+  const getResumedRevealStartTime = useCallback(() => {
+    const { currentQuestion, settings } = stateRef.current;
+    const pausedWordIndex = revealPausedWordIndexRef.current;
+    if (!currentQuestion || pausedWordIndex == null || !settings) {
+      return null;
+    }
+
+    const revealIntervalMs = getRevealIntervalMs(settings.revealSpeed);
+    if (revealIntervalMs <= 0) {
+      return null;
+    }
+
+    return getRevealStartTimeForWordIndex(
+      pausedWordIndex,
+      revealIntervalMs,
+      getCoordinatorNow(),
+    );
+  }, [getCoordinatorNow]);
+
+  const clearRevealPause = useCallback(() => {
+    revealPausedAtRef.current = null;
+    revealPausedWordIndexRef.current = null;
+  }, []);
+
+  const applyResumedRevealStartTime = useCallback((resumedRevealStartTime?: number | null) => {
+    if (resumedRevealStartTime != null) {
+      setRevealStartTime(coordinatorTimeToLocal(resumedRevealStartTime));
+    }
+    clearRevealPause();
+  }, [clearRevealPause, coordinatorTimeToLocal]);
+
   const applyGamePause = useCallback((
     playerId?: string,
     playerName?: string,
@@ -505,15 +549,14 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           ));
         }
       }
-      revealPausedAtRef.current = null;
-      revealPausedWordIndexRef.current = null;
+      clearRevealPause();
     }
 
     setStatus('playing');
     setIsBuzzLocked(false);
     setPausedByPlayerId(null);
     setPausedByName(null);
-  }, [coordinatorTimeToLocal]);
+  }, [clearRevealPause, coordinatorTimeToLocal]);
 
   const setAndBroadcastBuzzQueue = useCallback((playerIds: string[]) => {
     queuedBuzzWordIndexRef.current = Object.fromEntries(
@@ -547,9 +590,15 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     queuedBuzzWordIndexRef.current = Object.fromEntries(
       nextQueue.map(id => [id, queuedBuzzWordIndexRef.current[id]])
     );
+    const shouldPauseReveal = !stateRef.current.isBuzzLocked && !activeBuzzerIdRef.current;
+    if (shouldPauseReveal) {
+      pauseRevealForBuzz(wordIndex);
+    }
+
     activeBuzzerIdRef.current = playerId;
     buzzQueueRef.current = nextQueue;
     setBuzzQueue(nextQueue);
+
     setIsBuzzLocked(true);
     setBuzzWordIndex(wordIndex);
     setCurrentBuzzer(buzzer);
@@ -559,7 +608,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     const buzzDeadline = getCoordinatorNow() + SCORING.BUZZ_TIMEOUT_SECONDS * 1000;
     startBuzzTimer(playerId, buzzDeadline);
     void send({ type: 'buzz:lock', playerId, wordIndex, queuedPlayerIds: nextQueue, buzzTimerEnd: buzzDeadline });
-  }, [getCoordinatorNow, send, startBuzzTimer]);
+  }, [getCoordinatorNow, pauseRevealForBuzz, send, startBuzzTimer]);
 
   const handleBuzzRequest = useCallback((playerId: string, wordIndex?: number) => {
     const { currentQuestion, currentResult, currentBuzzer, lockedOutPlayers, status, isBuzzLocked } = stateRef.current;
@@ -838,6 +887,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     // Update coordinator's local state without waiting for network
     if (isCorrect) {
       clearBuzzQueue(true);
+      clearRevealPause();
       setCurrentResult(result);
       setCurrentBuzzer(null);
       activeBuzzerIdRef.current = null;
@@ -867,6 +917,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         activeBuzzerIdRef.current = null;
         setBuzzerResult(null);
         setBuzzerAnswer('');
+        clearRevealPause();
         void send({ type: 'buzz:unlock', lockedOutPlayers: newLockedOut, allLockedOut: true, lastResult: result });
       } else {
         // Delay unlock so everyone sees the wrong answer briefly
@@ -879,13 +930,19 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           activeBuzzerIdRef.current = null;
           setBuzzerResult(null);
           setBuzzerAnswer('');
+          const resumedRevealStartTime = getResumedRevealStartTime();
+          applyResumedRevealStartTime(resumedRevealStartTime);
           setIsBuzzLocked(false);
           setCurrentResult(null);
-          void send({ type: 'buzz:unlock', lockedOutPlayers: newLockedOut });
+          void send({
+            type: 'buzz:unlock',
+            lockedOutPlayers: newLockedOut,
+            revealStartTime: resumedRevealStartTime ?? undefined,
+          });
         }, SCORING.WRONG_ANSWER_DISPLAY_MS);
       }
     }
-  }, [send, addBuzzToSummary, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, getCoordinatorNow, grantNextQueuedBuzzer, startBuzzTimer]);
+  }, [send, addBuzzToSummary, applyResumedRevealStartTime, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearWrongAnswerTimer, getCoordinatorNow, getResumedRevealStartTime, grantNextQueuedBuzzer, startBuzzTimer]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Event Handler
@@ -1250,6 +1307,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       case 'buzz:lock': {
         // Coordinator's authoritative confirmation — clear any optimistic flag.
         selfBuzzPendingRef.current = false;
+        if (!stateRef.current.isBuzzLocked && !activeBuzzerIdRef.current) {
+          pauseRevealForBuzz(event.wordIndex);
+        }
         setIsBuzzLocked(true);
         setBuzzerAnswer('');
         setBuzzerResult(null);
@@ -1313,9 +1373,13 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setBuzzerAnswer('');
 
         if (event.allLockedOut && event.lastResult) {
+          clearRevealPause();
           setCurrentResult(event.lastResult);
           setIsBuzzLocked(true);
         } else {
+          applyResumedRevealStartTime(
+            event.revealStartTime ?? getResumedRevealStartTime()
+          );
           setIsBuzzLocked(false);
           setCurrentResult(null);
         }
@@ -1337,6 +1401,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setPromptText(null);
 
         if (isCorrect) {
+          clearRevealPause();
           setCurrentResult(event.buzz.result ?? null);
           setIsBuzzLocked(true);
           setCurrentBuzzer(null);
@@ -1448,7 +1513,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         break;
       }
     }
-  }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, fetchAndBroadcastQuestion, judgeAndBroadcastResult, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState, prefetchAndDistribute, coordinatorTimeToLocal, applyGamePause, applyGameResume]);
+  }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, applyResumedRevealStartTime, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping, fetchAndBroadcastQuestion, getResumedRevealStartTime, judgeAndBroadcastResult, pauseRevealForBuzz, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState, prefetchAndDistribute, coordinatorTimeToLocal, applyGamePause, applyGameResume]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Coordinator Transfer Detection (Rule 4)
@@ -1682,6 +1747,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     if (!locked) {
       selfBuzzPendingRef.current = true;
       activeBuzzerIdRef.current = selfPlayer.id;
+      pauseRevealForBuzz(wordIndex);
       setIsBuzzLocked(true);
       setCurrentBuzzer(selfPlayer);
       setBuzzWordIndex(wordIndex);
@@ -1690,7 +1756,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       startBuzzTimer(selfPlayer.id);
     }
     void send({ type: 'buzz:request', playerId: selfPlayer.id, wordIndex, timestamp: Date.now() });
-  }, [isCoordinatorFn, handleBuzzRequest, send, startBuzzTimer]);
+  }, [isCoordinatorFn, handleBuzzRequest, pauseRevealForBuzz, send, startBuzzTimer]);
 
   /** Called when a player submits their answer (or auto-submits on timer expiry). */
   const submitBuzzAnswer = useCallback(async (answer: string) => {

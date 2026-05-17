@@ -19,6 +19,7 @@ export default function PlayScreen() {
     loadNextQuestion,
     judgeAnswer,
     lastResult,
+    lastAnswer,
     promptInfo,
     clearError,
   } = useQuizSession();
@@ -111,6 +112,7 @@ export default function PlayScreen() {
         isLoading={loadingQuestion}
         error={error}
         result={lastResult}
+        submittedAnswer={lastAnswer}
         isPlaying={playState === 'active'}
         onBuzz={handleBuzz}
         onSubmitAnswer={handleSubmitAnswer}

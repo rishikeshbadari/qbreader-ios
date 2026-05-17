@@ -33,6 +33,7 @@ type Props = {
   isLoading: boolean;
   error?: string;
   result: AnswerResult | null | undefined;
+  submittedAnswer?: string;
   revealSpeed?: number;
 
   // Game state
@@ -92,6 +93,7 @@ export function QuizGameLayout({
   isLoading,
   error,
   result,
+  submittedAnswer,
   revealSpeed,
   isPlaying,
   isBuzzLocked = false,
@@ -428,6 +430,7 @@ export function QuizGameLayout({
               showAnswer={showResult}
               isBuzzed={activeHasBuzzed || isBuzzLocked}
               result={result ?? undefined}
+              submittedAnswer={submittedAnswer}
               revealActive={isPlaying && !isBuzzLocked}
               revealSpeedOverride={revealSpeed}
               revealStartTime={revealStartTime}

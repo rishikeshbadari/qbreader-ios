@@ -133,7 +133,7 @@ export type GameEvent =
   | { type: 'buzz:request'; playerId: string; wordIndex?: number; timestamp: number }
   | { type: 'buzz:lock'; playerId: string; wordIndex?: number; queuedPlayerIds?: string[]; buzzTimerEnd?: number }
   | { type: 'buzz:queue'; playerIds: string[] }
-  | { type: 'buzz:unlock'; lockedOutPlayers: string[]; allLockedOut?: boolean; lastResult?: AnswerResult }
+  | { type: 'buzz:unlock'; lockedOutPlayers: string[]; allLockedOut?: boolean; lastResult?: AnswerResult; revealStartTime?: number }
   | { type: 'buzz:submit'; buzz: Buzz }
   | { type: 'buzz:result'; buzz: Buzz; scores?: Record<string, number> }
   | { type: 'buzz:typing'; playerId: string; text: string }

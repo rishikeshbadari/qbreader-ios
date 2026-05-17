@@ -19,6 +19,7 @@ interface Props {
   showAnswer: boolean;
   isBuzzed?: boolean;
   result?: AnswerResult;
+  submittedAnswer?: string;
   revealActive?: boolean;
   onFullQuestionRevealChange?: (isRevealed: boolean) => void;
   onWordIndexChange?: (wordIndex: number) => void;
@@ -36,6 +37,7 @@ export function QuestionCard({
   showAnswer,
   isBuzzed = false,
   result,
+  submittedAnswer,
   revealActive = true,
   onFullQuestionRevealChange,
   onWordIndexChange,
@@ -308,6 +310,11 @@ export function QuestionCard({
 
   const answerResultColor = getResultColor(result, successColor, warningColor, errorColor, brandColor);
   const answerResultLabel = getResultLabel(result);
+  const trimmedSubmittedAnswer = submittedAnswer?.trim();
+  const shouldShowSubmittedAnswer =
+    showAnswer &&
+    normalizeDirective(result) === 'incorrect' &&
+    Boolean(trimmedSubmittedAnswer);
 
   return (
     <ThemedView
@@ -368,6 +375,21 @@ export function QuestionCard({
                     {answerResultLabel}
                   </ThemedText>
                 ) : null}
+                {shouldShowSubmittedAnswer ? (
+                  <View style={styles.submittedAnswerBlock}>
+                    <ThemedText style={[styles.submittedAnswerLabel, { color: mutedColor }]}>
+                      Your answer
+                    </ThemedText>
+                    <ThemedText type="defaultSemiBold" style={styles.submittedAnswerText}>
+                      {trimmedSubmittedAnswer}
+                    </ThemedText>
+                  </View>
+                ) : null}
+                {shouldShowSubmittedAnswer ? (
+                  <ThemedText style={[styles.submittedAnswerLabel, { color: mutedColor }]}>
+                    Correct answer
+                  </ThemedText>
+                ) : null}
                 <ThemedText style={styles.questionOnlyAnswerText}>
                   {tossup?.answer}
                 </ThemedText>
@@ -390,6 +412,21 @@ export function QuestionCard({
                     </ThemedText>
                   ) : null}
                 </View>
+                {shouldShowSubmittedAnswer ? (
+                  <View style={styles.submittedAnswerBlock}>
+                    <ThemedText style={[styles.submittedAnswerLabel, { color: mutedColor }]}>
+                      Your answer
+                    </ThemedText>
+                    <ThemedText type="defaultSemiBold" style={styles.submittedAnswerText}>
+                      {trimmedSubmittedAnswer}
+                    </ThemedText>
+                  </View>
+                ) : null}
+                {shouldShowSubmittedAnswer ? (
+                  <ThemedText style={[styles.submittedAnswerLabel, { color: mutedColor }]}>
+                    Correct answer
+                  </ThemedText>
+                ) : null}
                 <ThemedText type="defaultSemiBold">{tossup?.answer}</ThemedText>
               </View>
             ) : null}
@@ -515,6 +552,18 @@ const styles = StyleSheet.create({
     fontSize: responsiveFont(17),
     lineHeight: verticalScale(25),
     opacity: 0.86,
+  },
+  submittedAnswerBlock: {
+    gap: verticalScale(2),
+  },
+  submittedAnswerLabel: {
+    fontSize: responsiveFont(12),
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  submittedAnswerText: {
+    fontSize: responsiveFont(16),
+    lineHeight: verticalScale(23),
   },
   answerLabel: {
     fontSize: responsiveFont(18),

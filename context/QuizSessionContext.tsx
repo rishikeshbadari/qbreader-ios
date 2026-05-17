@@ -24,6 +24,7 @@ interface QuizSessionContextValue {
   error?: string;
   history: SessionHistoryEntry[];
   lastResult?: AnswerResult;
+  lastAnswer?: string;
   promptInfo?: { directedPrompt?: string } | null;
   loadNextQuestion: () => Promise<void>;
   judgeAnswer: (answer: string) => void;
@@ -50,6 +51,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
   const [history, setHistory] = useState<SessionHistoryEntry[]>([]);
   const [error, setError] = useState<string>();
   const [lastResult, setLastResult] = useState<AnswerResult>();
+  const [lastAnswer, setLastAnswer] = useState<string>();
   const [promptInfo, setPromptInfo] = useState<{ directedPrompt?: string } | null>(null);
   const promptedRef = useRef(false);
   const { selectedDifficulties, selectedCategories } = useSettings();
@@ -160,6 +162,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     setLoadingQuestion(true);
     setError(undefined);
     setLastResult(undefined);
+    setLastAnswer(undefined);
     setPromptInfo(null);
     promptedRef.current = false;
 
@@ -271,6 +274,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
       setPromptInfo(null);
 
       setLastResult(result);
+      setLastAnswer(sanitizedAnswer);
       setHistory((prev) => {
         const next = [
           {
@@ -313,6 +317,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
       ];
       return next.length > MAX_HISTORY_ENTRIES ? next.slice(0, MAX_HISTORY_ENTRIES) : next;
     });
+    setLastAnswer('');
   }, [currentQuestion]);
 
   const value = useMemo(
@@ -322,6 +327,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
       error,
       history,
       lastResult,
+      lastAnswer,
       promptInfo,
       loadNextQuestion,
       judgeAnswer,
@@ -336,6 +342,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
       judgeAnswer,
       skipQuestion,
       lastResult,
+      lastAnswer,
       promptInfo,
       loadNextQuestion,
       loadingQuestion,
