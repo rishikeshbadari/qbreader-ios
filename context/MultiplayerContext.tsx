@@ -88,6 +88,7 @@ type MultiplayerContextValue = {
   buzzerResult: { answer: string; isCorrect: boolean } | null;
   promptText: string | null;
   buzzQueuePosition: number | null;
+  pausedByPlayerId: string | null;
   pausedByName: string | null;
   readyPlayers: string[];
   connectionStatuses: Record<string, 'connected' | 'reconnecting' | 'disconnected'>;
@@ -101,7 +102,7 @@ type MultiplayerContextValue = {
   buzzIn: (wordIndex?: number) => Promise<void>;
   submitBuzzAnswer: (answer: string) => Promise<void>;
   sendBuzzTyping: (text: string) => void;
-  noBuzzTimeout: () => Promise<void>;
+  noBuzzTimeout: (questionId?: string) => Promise<void>;
   pauseGame: () => Promise<void>;
   resumeGame: () => Promise<void>;
   updateSettings: (settings: GameSettings) => Promise<void>;
@@ -115,6 +116,10 @@ type MultiplayerContextValue = {
 
 const MultiplayerContext = createContext<MultiplayerContextValue | null>(null);
 const TYPING_THROTTLE_MS = 120;
+const CLOCK_SYNC_INTERVAL_MS = 4000;
+const CLOCK_SYNC_MAX_RTT_MS = 1500;
+const CLOCK_SYNC_SMOOTHING = 0.25;
+const REVEAL_START_LEAD_MS = 250;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider
@@ -163,6 +168,10 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const lastTypingSendRef = useRef(0);
   const pendingTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingTypingTextRef = useRef('');
+  const clockSyncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const coordinatorClockOffsetRef = useRef(0);
+  const bestClockSyncRttRef = useRef<number | null>(null);
+  const revealPausedAtRef = useRef<number | null>(null);
 
   // Prompt state: tracks if a player has been prompted to give a more specific answer
   const [promptText, setPromptText] = useState<string | null>(null);
@@ -170,6 +179,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
   // Pause state: tracks which player paused to change settings
   const [pausedByName, setPausedByName] = useState<string | null>(null);
+  const [pausedByPlayerId, setPausedByPlayerId] = useState<string | null>(null);
 
   // Ready system state
   const [readyPlayers, setReadyPlayers] = useState<string[]>([]);
@@ -217,13 +227,13 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const stateRef = useRef({
     players, settings, currentQuestion, currentResult, currentBuzzer, selfPlayer,
     lockedOutPlayers, summary, hostId, scores, powerMarkWordIndex,
-    status, sessionId, allPlayers, buzzWordIndex, gameCode, readyPlayers,
+    status, sessionId, allPlayers, buzzWordIndex, gameCode, readyPlayers, revealStartTime,
     isBuzzLocked, buzzQueue,
   });
   stateRef.current = {
     players, settings, currentQuestion, currentResult, currentBuzzer, selfPlayer,
     lockedOutPlayers, summary, hostId, scores, powerMarkWordIndex,
-    status, sessionId, allPlayers, buzzWordIndex, gameCode, readyPlayers,
+    status, sessionId, allPlayers, buzzWordIndex, gameCode, readyPlayers, revealStartTime,
     isBuzzLocked, buzzQueue,
   };
 
@@ -238,6 +248,16 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     return sorted[0].id === selfPlayer.id;
   }, []);
 
+  const getCoordinatorNow = useCallback(() => Date.now() + coordinatorClockOffsetRef.current, []);
+
+  const coordinatorTimeToLocal = useCallback((coordinatorTime: number) => (
+    coordinatorTime - coordinatorClockOffsetRef.current
+  ), []);
+
+  const getNextRevealStartTime = useCallback(() => (
+    getCoordinatorNow() + REVEAL_START_LEAD_MS
+  ), [getCoordinatorNow]);
+
   const send = useCallback(async (event: GameEvent) => {
     try {
       await transportRef.current.send(event);
@@ -245,6 +265,38 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       console.error('Failed to send event:', err);
     }
   }, []);
+
+  useEffect(() => {
+    if (clockSyncIntervalRef.current) {
+      clearInterval(clockSyncIntervalRef.current);
+      clockSyncIntervalRef.current = null;
+    }
+    bestClockSyncRttRef.current = null;
+
+    if (!selfPlayer || status === 'idle' || status === 'ended') {
+      coordinatorClockOffsetRef.current = 0;
+      return;
+    }
+
+    if (isCoordinatorValue) {
+      coordinatorClockOffsetRef.current = 0;
+      return;
+    }
+
+    const sendClockPing = () => {
+      void send({ type: 'clock:ping', playerId: selfPlayer.id, sentAt: Date.now() });
+    };
+
+    sendClockPing();
+    clockSyncIntervalRef.current = setInterval(sendClockPing, CLOCK_SYNC_INTERVAL_MS);
+
+    return () => {
+      if (clockSyncIntervalRef.current) {
+        clearInterval(clockSyncIntervalRef.current);
+        clockSyncIntervalRef.current = null;
+      }
+    };
+  }, [coordinatorId, isCoordinatorValue, selfPlayer, send, status]);
 
   const clearWrongAnswerTimer = useCallback(() => {
     if (wrongAnswerTimerRef.current) {
@@ -276,6 +328,13 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     prefetchedRef.current = null;
     prefetchInFlightKeyRef.current = null;
     preloadedQuestionRef.current = null;
+    if (clockSyncIntervalRef.current) {
+      clearInterval(clockSyncIntervalRef.current);
+      clockSyncIntervalRef.current = null;
+    }
+    coordinatorClockOffsetRef.current = 0;
+    bestClockSyncRttRef.current = null;
+    revealPausedAtRef.current = null;
     if (buzzTimerRef.current) {
       clearTimeout(buzzTimerRef.current);
       buzzTimerRef.current = null;
@@ -305,6 +364,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setBuzzerAnswer('');
     setBuzzWordIndex(undefined);
     setBuzzerResult(null);
+    revealPausedAtRef.current = null;
     setBuzzQueue([]);
     buzzQueueRef.current = [];
     queuedBuzzWordIndexRef.current = {};
@@ -312,6 +372,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     clearPendingTyping();
     setPromptText(null);
     promptedPlayerRef.current = null;
+    setPausedByPlayerId(null);
     setPausedByName(null);
     setReadyPlayers([]);
     setConnectionStatuses({});
@@ -353,9 +414,11 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setBuzzTimerEnd(null);
   }, []);
 
-  const startBuzzTimer = useCallback((playerId: string) => {
+  const startBuzzTimer = useCallback((playerId: string, coordinatorDeadline?: number) => {
     clearBuzzTimer();
-    const endTime = Date.now() + SCORING.BUZZ_TIMEOUT_SECONDS * 1000;
+    const endTime = coordinatorTimeToLocal(
+      coordinatorDeadline ?? getCoordinatorNow() + SCORING.BUZZ_TIMEOUT_SECONDS * 1000
+    );
     setBuzzTimerEnd(endTime);
 
     buzzTimerRef.current = setTimeout(() => {
@@ -363,8 +426,43 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       if (isCoordinatorFn()) {
         void send({ type: 'buzz:timeout', playerId });
       }
-    }, SCORING.BUZZ_TIMEOUT_SECONDS * 1000);
-  }, [clearBuzzTimer, isCoordinatorFn, send]);
+    }, Math.max(0, endTime - Date.now()));
+  }, [clearBuzzTimer, coordinatorTimeToLocal, getCoordinatorNow, isCoordinatorFn, send]);
+
+  const applyGamePause = useCallback((playerId?: string, playerName?: string, pausedAt?: number) => {
+    setStatus('paused');
+    setIsBuzzLocked(true);
+    setPausedByPlayerId(playerId ?? null);
+    setPausedByName(playerName ?? null);
+
+    const { currentQuestion, currentResult, revealStartTime } = stateRef.current;
+    if (currentQuestion && !currentResult && revealStartTime != null) {
+      revealPausedAtRef.current = pausedAt != null
+        ? coordinatorTimeToLocal(pausedAt)
+        : Date.now();
+    }
+  }, [coordinatorTimeToLocal]);
+
+  const applyGameResume = useCallback((resumedAt?: number) => {
+    const pausedAt = revealPausedAtRef.current;
+    if (pausedAt != null) {
+      const resumedLocal = resumedAt != null
+        ? coordinatorTimeToLocal(resumedAt)
+        : Date.now();
+      const pauseDuration = Math.max(0, resumedLocal - pausedAt);
+      if (pauseDuration > 0) {
+        setRevealStartTime(previous => (
+          previous == null ? previous : previous + pauseDuration
+        ));
+      }
+      revealPausedAtRef.current = null;
+    }
+
+    setStatus('playing');
+    setIsBuzzLocked(false);
+    setPausedByPlayerId(null);
+    setPausedByName(null);
+  }, [coordinatorTimeToLocal]);
 
   const setAndBroadcastBuzzQueue = useCallback((playerIds: string[]) => {
     queuedBuzzWordIndexRef.current = Object.fromEntries(
@@ -407,9 +505,10 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setBuzzerAnswer('');
     setBuzzerResult(null);
     setPromptText(null);
-    startBuzzTimer(playerId);
-    void send({ type: 'buzz:lock', playerId, wordIndex, queuedPlayerIds: nextQueue });
-  }, [send, startBuzzTimer]);
+    const buzzDeadline = getCoordinatorNow() + SCORING.BUZZ_TIMEOUT_SECONDS * 1000;
+    startBuzzTimer(playerId, buzzDeadline);
+    void send({ type: 'buzz:lock', playerId, wordIndex, queuedPlayerIds: nextQueue, buzzTimerEnd: buzzDeadline });
+  }, [getCoordinatorNow, send, startBuzzTimer]);
 
   const handleBuzzRequest = useCallback((playerId: string, wordIndex?: number) => {
     const { currentQuestion, currentResult, currentBuzzer, lockedOutPlayers, status, isBuzzLocked } = stateRef.current;
@@ -529,12 +628,15 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     clearBuzzQueue();
     setPromptText(null);
     promptedPlayerRef.current = null;
+    revealPausedAtRef.current = null;
+    setPausedByPlayerId(null);
+    setPausedByName(null);
     clearBuzzTimer();
     clearWrongAnswerTimer();
 
-    const revealStart = Date.now();
+    const revealStart = getNextRevealStartTime();
     setPowerMarkWordIndex(preloaded.pmIndex);
-    setRevealStartTime(revealStart);
+    setRevealStartTime(coordinatorTimeToLocal(revealStart));
     setCurrentQuestion(preloaded.tossup);
     addQuestionToSummary(preloaded.tossup, preloaded.pmIndex);
     void send({ type: 'question:reveal', revealStartTime: revealStart });
@@ -544,7 +646,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     // Start pre-fetching the NEXT question for all devices
     prefetchAndDistribute();
     return true;
-  }, [send, addQuestionToSummary, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, prefetchAndDistribute]);
+  }, [send, addQuestionToSummary, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, coordinatorTimeToLocal, getNextRevealStartTime, prefetchAndDistribute]);
 
   /**
    * Fallback: fetch a question on-demand and broadcast with question:new.
@@ -571,6 +673,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     clearBuzzQueue();
     setPromptText(null);
     promptedPlayerRef.current = null;
+    revealPausedAtRef.current = null;
+    setPausedByPlayerId(null);
+    setPausedByName(null);
     clearBuzzTimer();
     clearWrongAnswerTimer();
 
@@ -592,9 +697,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       return;
     }
 
-    const revealStart = Date.now();
+    const revealStart = getNextRevealStartTime();
     setPowerMarkWordIndex(pmIndex);
-    setRevealStartTime(revealStart);
+    setRevealStartTime(coordinatorTimeToLocal(revealStart));
     setCurrentQuestion(tossup);
     addQuestionToSummary(tossup, pmIndex);
     void send({ type: 'question:new', tossup, powerMarkWordIndex: pmIndex, revealStartTime: revealStart });
@@ -603,7 +708,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
     // Pre-fetch + distribute next question to all devices
     prefetchAndDistribute();
-  }, [send, addQuestionToSummary, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, prefetchAndDistribute, revealPreloadedQuestion]);
+  }, [send, addQuestionToSummary, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, coordinatorTimeToLocal, getNextRevealStartTime, prefetchAndDistribute, revealPreloadedQuestion]);
 
   const judgeAndBroadcastResult = useCallback(async (buzz: Buzz) => {
     const { currentQuestion, currentResult, lockedOutPlayers, players } = stateRef.current;
@@ -623,8 +728,14 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       promptedPlayerRef.current = buzz.playerId;
       setPromptText(result.directedPrompt ?? 'Be more specific');
       setBuzzerAnswer('');
-      void send({ type: 'buzz:prompt', playerId: buzz.playerId, directedPrompt: result.directedPrompt });
-      startBuzzTimer(buzz.playerId);
+      const buzzDeadline = getCoordinatorNow() + SCORING.BUZZ_TIMEOUT_SECONDS * 1000;
+      void send({
+        type: 'buzz:prompt',
+        playerId: buzz.playerId,
+        directedPrompt: result.directedPrompt,
+        buzzTimerEnd: buzzDeadline,
+      });
+      startBuzzTimer(buzz.playerId, buzzDeadline);
       return;
     }
 
@@ -719,7 +830,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         }, SCORING.WRONG_ANSWER_DISPLAY_MS);
       }
     }
-  }, [send, addBuzzToSummary, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, grantNextQueuedBuzzer, startBuzzTimer]);
+  }, [send, addBuzzToSummary, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, getCoordinatorNow, grantNextQueuedBuzzer, startBuzzTimer]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Event Handler
@@ -747,16 +858,26 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         // Mark new player as connected
         setConnectionStatuses(prev => ({ ...prev, [event.player.id]: 'connected' }));
 
-        // Rule 5: Coordinator syncs FULL state to new player
-        if (isCoordinatorFn()) {
-          const s = stateRef.current;
+        // Rule 5: Sync FULL state to new players. The host is authoritative
+        // during lobby setup; a non-host coordinator may not have received
+        // host state yet if its random player ID sorts first.
+        const s = stateRef.current;
+        const canSyncState = Boolean(
+          s.selfPlayer &&
+          event.player.id !== s.selfPlayer.id &&
+          s.hostId &&
+          s.settings &&
+          (s.selfPlayer.id === s.hostId || isCoordinatorFn())
+        );
+        if (canSyncState) {
           const syncPayload: StateSyncPayload = {
             players: [...s.players, event.player],
-            hostId: s.hostId ?? '',
+            hostId: s.hostId!,
             settings: s.settings!,
             status: s.status,
             currentQuestion: s.currentQuestion ?? undefined,
             powerMarkWordIndex: s.powerMarkWordIndex,
+            revealStartTime: s.revealStartTime,
             scores: { ...s.scores, [event.player.id]: 0 },
             lockedOutPlayers: s.lockedOutPlayers,
             buzzQueue: s.buzzQueue,
@@ -872,6 +993,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setBuzzWordIndex(undefined);
         clearBuzzQueue();
         setCountdownSeconds(null);
+        revealPausedAtRef.current = null;
+        setPausedByPlayerId(null);
+        setPausedByName(null);
         if (event.hostId) setHostId(event.hostId);
         if (isCoordinatorFn()) {
           prefetchAndDistribute();
@@ -880,16 +1004,12 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       }
 
       case 'game:pause': {
-        setStatus('paused');
-        setIsBuzzLocked(true);
-        setPausedByName(event.playerName ?? null);
+        applyGamePause(event.playerId, event.playerName, event.pausedAt);
         break;
       }
 
       case 'game:resume': {
-        setStatus('playing');
-        setIsBuzzLocked(false);
-        setPausedByName(null);
+        applyGameResume(event.resumedAt);
         break;
       }
 
@@ -949,13 +1069,20 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         clearWrongAnswerTimer();
         setStatus('playing');
         setPowerMarkWordIndex(event.powerMarkWordIndex);
-        setRevealStartTime(event.revealStartTime ?? Date.now());
+        setRevealStartTime(
+          event.revealStartTime != null
+            ? coordinatorTimeToLocal(event.revealStartTime)
+            : Date.now()
+        );
         setBuzzerAnswer('');
         setBuzzerResult(null);
         setBuzzWordIndex(undefined);
         clearBuzzQueue();
         setPromptText(null);
         promptedPlayerRef.current = null;
+        revealPausedAtRef.current = null;
+        setPausedByPlayerId(null);
+        setPausedByName(null);
         clearPendingTyping();
         addQuestionToSummary(event.tossup, event.powerMarkWordIndex);
         break;
@@ -994,13 +1121,16 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           clearWrongAnswerTimer();
           setStatus('playing');
           setPowerMarkWordIndex(preloaded.pmIndex);
-          setRevealStartTime(event.revealStartTime);
+          setRevealStartTime(coordinatorTimeToLocal(event.revealStartTime));
           setBuzzerAnswer('');
           setBuzzerResult(null);
           setBuzzWordIndex(undefined);
           clearBuzzQueue();
           setPromptText(null);
           promptedPlayerRef.current = null;
+          revealPausedAtRef.current = null;
+          setPausedByPlayerId(null);
+          setPausedByName(null);
           clearPendingTyping();
           addQuestionToSummary(preloaded.tossup, preloaded.pmIndex);
         }
@@ -1010,6 +1140,47 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       case 'question:request': {
         if (isCoordinatorFn()) {
           void fetchAndBroadcastQuestion();
+        }
+        break;
+      }
+
+      case 'clock:ping': {
+        const { selfPlayer } = stateRef.current;
+        if (selfPlayer && isCoordinatorFn() && event.playerId !== selfPlayer.id) {
+          void send({
+            type: 'clock:pong',
+            playerId: event.playerId,
+            sentAt: event.sentAt,
+            coordinatorTime: Date.now(),
+          });
+        }
+        break;
+      }
+
+      case 'clock:pong': {
+        const { selfPlayer } = stateRef.current;
+        if (!selfPlayer || event.playerId !== selfPlayer.id || isCoordinatorFn()) {
+          break;
+        }
+
+        const receivedAt = Date.now();
+        const roundTripMs = receivedAt - event.sentAt;
+        if (roundTripMs < 0 || roundTripMs > CLOCK_SYNC_MAX_RTT_MS) {
+          break;
+        }
+
+        const sampleOffset = event.coordinatorTime + roundTripMs / 2 - receivedAt;
+        const bestRoundTrip = bestClockSyncRttRef.current;
+        const shouldTrustSample = bestRoundTrip == null || roundTripMs <= bestRoundTrip * 1.5;
+
+        if (bestRoundTrip == null || roundTripMs < bestRoundTrip) {
+          bestClockSyncRttRef.current = roundTripMs;
+        }
+
+        if (shouldTrustSample) {
+          coordinatorClockOffsetRef.current = bestRoundTrip == null
+            ? sampleOffset
+            : coordinatorClockOffsetRef.current + (sampleOffset - coordinatorClockOffsetRef.current) * CLOCK_SYNC_SMOOTHING;
         }
         break;
       }
@@ -1028,7 +1199,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         buzzQueueRef.current = event.queuedPlayerIds ?? buzzQueueRef.current.filter(id => id !== event.playerId);
         setBuzzQueue(buzzQueueRef.current);
         // Rule 10: Start buzz timer
-        startBuzzTimer(event.playerId);
+        startBuzzTimer(event.playerId, event.buzzTimerEnd);
         break;
       }
 
@@ -1066,7 +1237,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         clearPendingTyping();
         setPromptText(event.directedPrompt ?? 'Be more specific');
         setBuzzerAnswer('');
-        startBuzzTimer(event.playerId);
+        startBuzzTimer(event.playerId, event.buzzTimerEnd);
         break;
       }
 
@@ -1153,6 +1324,12 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       }
 
       case 'question:timeup': {
+        if (
+          event.questionId &&
+          stateRef.current.currentQuestion?.id !== event.questionId
+        ) {
+          break;
+        }
         // No one buzzed — show answer, no points
         if (!stateRef.current.currentResult) {
           setCurrentResult({ directive: 'skip' } as AnswerResult);
@@ -1170,6 +1347,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       case 'state:sync': {
         // Rule 5: Full state sync for late joiners
         const s = event.state;
+        if (!s.hostId || !s.settings) {
+          break;
+        }
         setPlayers(s.players);
         setAllPlayers(prev => {
           const merged = [...prev];
@@ -1185,6 +1365,11 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           setCurrentQuestion(s.currentQuestion);
           setPowerMarkWordIndex(s.powerMarkWordIndex);
         }
+        setRevealStartTime(
+          s.revealStartTime != null
+            ? coordinatorTimeToLocal(s.revealStartTime)
+            : null
+        );
         setScores(s.scores);
         setLockedOutPlayers(s.lockedOutPlayers);
         buzzQueueRef.current = s.buzzQueue ?? [];
@@ -1201,7 +1386,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         break;
       }
     }
-  }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, fetchAndBroadcastQuestion, judgeAndBroadcastResult, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState, prefetchAndDistribute]);
+  }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, fetchAndBroadcastQuestion, judgeAndBroadcastResult, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState, prefetchAndDistribute, coordinatorTimeToLocal, applyGamePause, applyGameResume]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Coordinator Transfer Detection (Rule 4)
@@ -1507,9 +1692,10 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   }, [send]);
 
   /** No one buzzed and the timer expired — show answer, no points. */
-  const noBuzzTimeout = useCallback(async () => {
+  const noBuzzTimeout = useCallback(async (questionId?: string) => {
     const { currentResult, currentQuestion } = stateRef.current;
     if (currentResult || !currentQuestion) return;
+    if (questionId && currentQuestion.id !== questionId) return;
 
     // Show answer locally for all players
     setCurrentResult({ directive: 'skip' } as AnswerResult);
@@ -1518,24 +1704,27 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
     // Coordinator broadcasts to ensure consistency
     if (isCoordinatorFn()) {
-      void send({ type: 'question:timeup' });
+      void send({ type: 'question:timeup', questionId: currentQuestion.id });
     }
   }, [clearBuzzQueue, isCoordinatorFn, send]);
 
   const pauseGame = useCallback(async () => {
-    const name = stateRef.current.selfPlayer?.name;
-    setStatus('paused');
-    setIsBuzzLocked(true);
-    setPausedByName(name ?? null);
-    void send({ type: 'game:pause', playerName: name });
-  }, [send]);
+    const player = stateRef.current.selfPlayer;
+    const pausedAt = getCoordinatorNow();
+    applyGamePause(player?.id, player?.name, pausedAt);
+    void send({
+      type: 'game:pause',
+      playerId: player?.id,
+      playerName: player?.name,
+      pausedAt,
+    });
+  }, [applyGamePause, getCoordinatorNow, send]);
 
   const resumeGame = useCallback(async () => {
-    setStatus('playing');
-    setIsBuzzLocked(false);
-    setPausedByName(null);
-    void send({ type: 'game:resume' });
-  }, [send]);
+    const resumedAt = getCoordinatorNow();
+    applyGameResume(resumedAt);
+    void send({ type: 'game:resume', resumedAt });
+  }, [applyGameResume, getCoordinatorNow, send]);
 
   // Rule 2: Broadcast settings to all players
   const updateSettings = useCallback(async (newSettings: GameSettings) => {
@@ -1727,6 +1916,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     buzzerResult,
     promptText,
     buzzQueuePosition,
+    pausedByPlayerId,
     pausedByName,
     readyPlayers,
     connectionStatuses,
@@ -1752,7 +1942,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     sessionId, gameCode, status, players, allPlayers, settings, currentQuestion, currentResult, currentBuzzer,
     isLoading, isBuzzLocked, isSelfLockedOut, summary, selfPlayer,
     hostId, scores, isHostValue, isCoordinatorValue, buzzTimerEnd, revealStartTime,
-    buzzerAnswer, buzzerResult, promptText, buzzQueuePosition, pausedByName,
+    buzzerAnswer, buzzerResult, promptText, buzzQueuePosition, pausedByPlayerId, pausedByName,
     readyPlayers, connectionStatuses, countdownSeconds, playerColors,
     hostGame, joinGame, startNextQuestion, buzzIn, submitBuzzAnswer, sendBuzzTyping, noBuzzTimeout,
     pauseGame, resumeGame, updateSettings, endGame, leaveGame,

@@ -96,6 +96,7 @@ export type StateSyncPayload = {
   status: SessionStatus;
   currentQuestion?: Tossup;
   powerMarkWordIndex?: number;
+  revealStartTime?: number | null;
   scores: Record<string, number>;
   lockedOutPlayers: string[];
   buzzQueue?: string[];
@@ -119,23 +120,25 @@ export type GameEvent =
   | { type: 'host:transfer'; newHostId: string }
   | { type: 'game:start'; settings: GameSettings; hostId: string }
   | { type: 'game:countdown'; seconds: number }
-  | { type: 'game:pause'; playerName?: string }
-  | { type: 'game:resume' }
+  | { type: 'game:pause'; playerId?: string; playerName?: string; pausedAt?: number }
+  | { type: 'game:resume'; resumedAt?: number }
   | { type: 'game:end'; summary?: GameSummary }
   | { type: 'game:settings'; settings: GameSettings }
   | { type: 'question:new'; tossup: Tossup; powerMarkWordIndex?: number; revealStartTime?: number }
   | { type: 'question:preload'; tossup: Tossup; powerMarkWordIndex?: number; settingsKey?: string }
   | { type: 'question:reveal'; revealStartTime: number }
   | { type: 'question:request' }
+  | { type: 'clock:ping'; playerId: string; sentAt: number }
+  | { type: 'clock:pong'; playerId: string; sentAt: number; coordinatorTime: number }
   | { type: 'buzz:request'; playerId: string; wordIndex?: number; timestamp: number }
-  | { type: 'buzz:lock'; playerId: string; wordIndex?: number; queuedPlayerIds?: string[] }
+  | { type: 'buzz:lock'; playerId: string; wordIndex?: number; queuedPlayerIds?: string[]; buzzTimerEnd?: number }
   | { type: 'buzz:queue'; playerIds: string[] }
   | { type: 'buzz:unlock'; lockedOutPlayers: string[]; allLockedOut?: boolean; lastResult?: AnswerResult }
   | { type: 'buzz:submit'; buzz: Buzz }
   | { type: 'buzz:result'; buzz: Buzz; scores?: Record<string, number> }
   | { type: 'buzz:typing'; playerId: string; text: string }
-  | { type: 'buzz:prompt'; playerId: string; directedPrompt?: string }
+  | { type: 'buzz:prompt'; playerId: string; directedPrompt?: string; buzzTimerEnd?: number }
   | { type: 'buzz:timeout'; playerId: string }
-  | { type: 'question:timeup' }
+  | { type: 'question:timeup'; questionId?: string }
   | { type: 'coordinator:change'; newCoordinatorId: string }
   | { type: 'state:sync'; state: StateSyncPayload };

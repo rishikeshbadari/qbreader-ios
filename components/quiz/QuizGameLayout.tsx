@@ -73,7 +73,7 @@ type Props = {
   buzzTimerEnd?: number | null;
 
   // Called when the full question is revealed and no one buzzes within the timer
-  onNoBuzzTimeout?: () => void;
+  onNoBuzzTimeout?: (questionId?: string) => void;
 
   // Synchronized reveal start time (epoch ms) — lets late-receiving devices skip ahead
   revealStartTime?: number | null;
@@ -225,14 +225,14 @@ export function QuizGameLayout({
         noBuzzFiredRef.current = true;
         setNoBuzzTimerEnd(null);
         setNoBuzzSeconds(null);
-        onNoBuzzTimeout?.();
+        onNoBuzzTimeout?.(question?.id);
       }
     };
 
     tick();
     const interval = setInterval(tick, 100);
     return () => clearInterval(interval);
-  }, [noBuzzTimerEnd, onNoBuzzTimeout]);
+  }, [noBuzzTimerEnd, onNoBuzzTimeout, question?.id]);
 
   // Track keyboard height
   useEffect(() => {

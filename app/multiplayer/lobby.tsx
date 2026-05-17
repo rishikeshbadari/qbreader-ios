@@ -7,7 +7,6 @@ import { getHostTransferCandidates, HostTransferModal } from '@/components/multi
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { GameCodeDisplay } from '@/components/multiplayer/GameCodeDisplay';
-import { HostTutorial } from '@/components/multiplayer/HostTutorial';
 import { PlayerListItem } from '@/components/multiplayer/PlayerListItem';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useThemeColor } from '@/hooks/useThemeColor';
@@ -168,8 +167,6 @@ export default function LobbyScreen() {
 
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
-      {isHost && <HostTutorial />}
-
       {/* Header */}
       <View style={styles.headerSection}>
         <View style={styles.headerRow}>

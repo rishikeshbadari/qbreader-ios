@@ -122,9 +122,21 @@ export function QuestionCard({
     }
 
     if (shouldAnimateQuestion && words.length > 0) {
-      revealIndexRef.current = 1;
-      setDisplayedQuestion(words[0]);
-      onWordIndexChangeRef.current?.(1);
+      let visibleWordCount = 1;
+      if (revealStartTime != null && revealIntervalMs > 0) {
+        const elapsed = Date.now() - revealStartTime;
+        visibleWordCount = elapsed < 0
+          ? 0
+          : Math.min(Math.floor(elapsed / revealIntervalMs) + 1, words.length);
+      }
+
+      revealIndexRef.current = visibleWordCount;
+      setDisplayedQuestion(words.slice(0, visibleWordCount).join(' '));
+      onWordIndexChangeRef.current?.(visibleWordCount);
+
+      if (visibleWordCount >= words.length) {
+        setHasRevealedFullQuestion((prev) => (prev ? prev : true));
+      }
     } else {
       revealIndexRef.current = 0;
       setDisplayedQuestion('');
@@ -138,6 +150,7 @@ export function QuestionCard({
     showAnswer,
     hasRevealedFullQuestion,
     revealIntervalMs,
+    revealStartTime,
     shouldAnimateQuestion,
   ]);
 
@@ -161,7 +174,10 @@ export function QuestionCard({
     if (!initialSyncAppliedRef.current && revealStartTime && revealIntervalMs > 0 && revealIndexRef.current < words.length) {
       initialSyncAppliedRef.current = true;
       const elapsed = Date.now() - revealStartTime;
-      const targetIndex = Math.min(Math.floor(elapsed / revealIntervalMs) + 1, words.length);
+      const targetIndex = Math.max(
+        0,
+        Math.min(Math.floor(elapsed / revealIntervalMs) + 1, words.length)
+      );
 
       if (targetIndex > revealIndexRef.current) {
         revealIndexRef.current = targetIndex;
@@ -181,7 +197,18 @@ export function QuestionCard({
       return;
     }
 
-    const revealNextWord = () => {
+    const shouldUseAnchoredSchedule = revealStartTime != null && revealIntervalMs > 0;
+
+    const scheduleNextWord = () => {
+      let delay = revealIntervalMs;
+      if (shouldUseAnchoredSchedule) {
+        const targetTime = revealStartTime + revealIndexRef.current * revealIntervalMs;
+        delay = Math.max(0, targetTime - Date.now());
+      }
+      animationTimeout.current = setTimeout(revealNextWord, delay);
+    };
+
+    function revealNextWord() {
       const nextWord = words[revealIndexRef.current];
       if (typeof nextWord !== 'string') {
         return;
@@ -194,22 +221,19 @@ export function QuestionCard({
       onWordIndexChangeRef.current?.(revealIndexRef.current);
 
       if (revealIndexRef.current < words.length && !buzzedRef.current) {
-        // Re-anchor every tick to absolute clock to prevent setTimeout drift
-        // and JS-thread-stall divergence between devices. Word N should appear
-        // at revealStartTime + N * intervalMs; schedule the next tick for that
-        // exact moment relative to Date.now().
-        let delay = revealIntervalMs;
-        if (revealStartTime != null && revealIntervalMs > 0) {
-          const targetTime = revealStartTime + revealIndexRef.current * revealIntervalMs;
-          delay = Math.max(0, targetTime - Date.now());
-        }
-        animationTimeout.current = setTimeout(revealNextWord, delay);
+        // Re-anchor anchored multiplayer reveals to absolute clock targets to
+        // prevent setTimeout drift and JS-thread-stall divergence between devices.
+        scheduleNextWord();
       } else if (revealIndexRef.current >= words.length) {
         setHasRevealedFullQuestion((prev) => (prev ? prev : true));
       }
-    };
+    }
 
-    revealNextWord();
+    if (shouldUseAnchoredSchedule) {
+      scheduleNextWord();
+    } else {
+      revealNextWord();
+    }
 
     return () => {
       clearAnimationTimeout();

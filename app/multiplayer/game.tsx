@@ -19,7 +19,25 @@ import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import type { GameSettings } from '@/types/multiplayer';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
+
+function sortedNumberKey(values: number[]): string {
+  return [...values].sort((left, right) => left - right).join(',');
+}
+
+function sortedStringKey(values: string[]): string {
+  return [...values].sort().join(',');
+}
+
+function areSettingsEqual(left: GameSettings | null | undefined, right: GameSettings): boolean {
+  if (!left) return false;
+  return (
+    sortedNumberKey(left.difficulties) === sortedNumberKey(right.difficulties) &&
+    sortedStringKey(left.categories) === sortedStringKey(right.categories) &&
+    left.revealSpeed === right.revealSpeed
+  );
+}
 
 export default function MultiplayerGameScreen() {
   const router = useRouter();
@@ -50,6 +68,7 @@ export default function MultiplayerGameScreen() {
     buzzerAnswer,
     buzzerResult,
     promptText,
+    pausedByPlayerId,
     pausedByName,
     noBuzzTimeout,
     pauseGame,
@@ -87,6 +106,12 @@ export default function MultiplayerGameScreen() {
 
   const isPlaying = status === 'playing';
   const selfScore = selfPlayer ? (scores[selfPlayer.id] ?? 0) : 0;
+  const settingsLockedForActiveBuzz = Boolean(
+    isPlaying &&
+    currentQuestion &&
+    !currentResult &&
+    (isBuzzLocked || currentBuzzer)
+  );
   const hostTransferCandidates = useMemo(
     () => getHostTransferCandidates(players, allPlayers, selfPlayer?.id),
     [players, allPlayers, selfPlayer?.id],
@@ -100,7 +125,7 @@ export default function MultiplayerGameScreen() {
   }, [defaultHostCandidateId, showHostTransferModal]);
 
   const handleOpenSettings = async () => {
-    if (!isHost) return;
+    if (!isHost || settingsLockedForActiveBuzz) return;
     await pauseGame();
     setTempCategories(settings?.categories ?? availableCategories.map(c => c.name));
     setTempDifficulties(settings?.difficulties ?? availableDifficulties.flatMap(d => d.values));
@@ -109,12 +134,20 @@ export default function MultiplayerGameScreen() {
   };
 
   const handleApplySettings = async () => {
-    await updateSettings({
+    const nextSettings = {
       categories: tempCategories.length ? tempCategories : availableCategories.map(c => c.name),
       difficulties: tempDifficulties.length ? tempDifficulties : availableDifficulties.flatMap(d => d.values),
       revealSpeed: tempSpeed,
-    });
+    };
+
     setShowSettings(false);
+
+    if (areSettingsEqual(settings, nextSettings)) {
+      await resumeGame();
+      return;
+    }
+
+    await updateSettings(nextSettings);
     await startNextQuestion();
   };
 
@@ -174,7 +207,13 @@ export default function MultiplayerGameScreen() {
   const overlayTextColor = colorScheme === 'dark' ? '#fff' : '#0f172a';
 
   // Another player is changing settings (not us)
-  const otherPlayerChangingSettings = status === 'paused' && pausedByName && pausedByName !== selfPlayer?.name;
+  const otherPlayerChangingSettings = Boolean(
+    status === 'paused' &&
+    (
+      (pausedByPlayerId && pausedByPlayerId !== selfPlayer?.id) ||
+      (!pausedByPlayerId && pausedByName && pausedByName !== selfPlayer?.name)
+    )
+  );
   const showPausedOverlay = status === 'paused' && !showSettings;
   const waitingForHostToStart = isPlaying && !currentQuestion && !isLoading && !isHost;
   // Only show overlay for pause states — lobby is handled by the lobby screen
@@ -203,11 +242,26 @@ export default function MultiplayerGameScreen() {
               {isHost ? (
                 <Pressable
                   onPress={handleOpenSettings}
+                  disabled={settingsLockedForActiveBuzz}
                   accessibilityRole="button"
-                  accessibilityLabel="Open game settings"
+                  accessibilityLabel={
+                    settingsLockedForActiveBuzz
+                      ? 'Game settings locked during active buzz'
+                      : 'Open game settings'
+                  }
                   testID="game-settings-button"
-                  style={[styles.hudButton, { borderColor }]}>
-                  <ThemedText style={[styles.hudButtonText, { color: textColor }]}>Settings</ThemedText>
+                  style={[
+                    styles.hudButton,
+                    { borderColor },
+                    settingsLockedForActiveBuzz && styles.hudButtonDisabled,
+                  ]}>
+                  <ThemedText
+                    style={[
+                      styles.hudButtonText,
+                      { color: settingsLockedForActiveBuzz ? mutedColor : textColor },
+                    ]}>
+                    Settings
+                  </ThemedText>
                 </Pressable>
               ) : null}
               <Pressable
@@ -391,6 +445,9 @@ const styles = StyleSheet.create({
     borderRadius: scale(999),
     paddingHorizontal: spacing.sm,
     paddingVertical: verticalScale(6),
+  },
+  hudButtonDisabled: {
+    opacity: 0.45,
   },
   hudButtonText: {
     fontSize: responsiveFont(13),
