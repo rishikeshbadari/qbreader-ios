@@ -8,7 +8,7 @@ import { Colors } from '@/constants/Colors';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import type { SessionHistoryEntry } from '@/types/qb';
 import { normalizeDirective } from '@/utils/directives';
-import { stripHtmlTags, truncateText } from '@/utils/text';
+import { stripHtmlTags } from '@/utils/text';
 import { responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 interface Props {
@@ -119,7 +119,7 @@ export function SessionHistoryList({
             <DirectivePill result={item.result} />
           </View>
           <ThemedText style={styles.questionPreview}>
-            {truncateText(stripHtmlTags(item.tossup.questionHtml), 160)}
+            {stripHtmlTags(item.tossup.questionHtml) || item.tossup.question}
           </ThemedText>
           <View style={styles.answerPreview}>
             <ThemedText style={styles.answerLabel}>You</ThemedText>

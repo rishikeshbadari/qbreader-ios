@@ -4,8 +4,6 @@ import * as Haptics from 'expo-haptics';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
-  Keyboard,
-  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -42,7 +40,6 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
   const [isWarmingTabs, setIsWarmingTabs] = useState(true);
   const activeIndex = useRef(new Animated.Value(state.index)).current;
   const liquidPulse = useRef(new Animated.Value(0)).current;
-  const keyboardProgress = useRef(new Animated.Value(1)).current;
   const didWarmTabs = useRef(false);
   const initialTabState = useRef({
     key: state.key,
@@ -122,33 +119,6 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
     ]).start();
   }, [activeIndex, liquidPulse, state.index]);
 
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSubscription = Keyboard.addListener(showEvent, () => {
-      Animated.timing(keyboardProgress, {
-        toValue: 0,
-        duration: 180,
-        useNativeDriver: true,
-      }).start();
-    });
-
-    const hideSubscription = Keyboard.addListener(hideEvent, () => {
-      Animated.spring(keyboardProgress, {
-        toValue: 1,
-        damping: 18,
-        stiffness: 180,
-        useNativeDriver: true,
-      }).start();
-    });
-
-    return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
-    };
-  }, [keyboardProgress]);
-
   const contentWidth = barWidth > 0 ? Math.max(0, barWidth - BAR_HORIZONTAL_PADDING * 2) : 0;
   const itemWidth = contentWidth > 0 ? contentWidth / state.routes.length : 0;
   const indicatorWidth = itemWidth > 0 ? Math.max(scale(58), itemWidth - scale(10)) : 0;
@@ -176,11 +146,6 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
   const liquidScaleY = liquidPulse.interpolate({
     inputRange: [0, 0.55, 1],
     outputRange: [1, 0.92, 1],
-  });
-
-  const tabBarTranslateY = keyboardProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [FLOATING_TAB_BAR_HEIGHT, 0],
   });
 
   const bottomInset = Math.max(insets.bottom, spacing.sm);
@@ -214,8 +179,6 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
           {
             borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.82)',
             shadowColor: isDark ? '#000' : '#4F46E5',
-            opacity: keyboardProgress,
-            transform: [{ translateY: tabBarTranslateY }],
           },
         ]}
         onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}>

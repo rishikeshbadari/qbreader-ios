@@ -320,6 +320,7 @@ export default function MultiplayerGameScreen() {
         onNoBuzzTimeout={noBuzzTimeout}
         promptText={promptText}
         onNext={startNextQuestion}
+        showMainActionLabel={false}
         bottomPadding={spacing.sm}
         overlay={
           showOverlay ? (

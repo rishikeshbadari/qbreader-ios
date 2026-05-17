@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  InputAccessoryView,
   Keyboard,
   Platform,
   Pressable,
   StyleSheet,
   View,
+  type KeyboardEvent,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Haptics from 'expo-haptics';
@@ -125,8 +127,9 @@ export function QuizGameLayout({
 }: Props) {
   const [answer, setAnswer] = useState('');
   const [hasBuzzed, setHasBuzzed] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const keyboardAnimatedValue = useRef(new Animated.Value(0)).current;
+  const baseAnswerBottomOffset = bottomPadding + (questionOnly ? 0 : spacing.md);
+  const keyboardAnimatedValue = useRef(new Animated.Value(baseAnswerBottomOffset)).current;
+  const keyboardVisibleRef = useRef(false);
   const wordIndexRef = useRef(0);
 
   const colorScheme = useColorScheme();
@@ -242,31 +245,47 @@ export function QuizGameLayout({
     return () => clearInterval(interval);
   }, [noBuzzTimerEnd, onNoBuzzTimeout, question?.id]);
 
-  // Track keyboard height
+  // Track keyboard movement so the answer input rides with the keyboard.
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
-    const showSub = Keyboard.addListener(showEvent, (e) => {
+    const animateToKeyboardOffset = (toValue: number, event: KeyboardEvent) => {
+      Keyboard.scheduleLayoutAnimation(event);
+      keyboardAnimatedValue.stopAnimation();
+      Animated.timing(keyboardAnimatedValue, {
+        toValue,
+        duration: event.duration > 0 ? event.duration : 220,
+        useNativeDriver: false,
+      }).start();
+    };
+
+    const showSub = Keyboard.addListener(showEvent, (event) => {
       // If parent handles bottom safe area, subtract it from keyboard height
       // since the overlay's bottom is already inset by the safe area
       const adjustedHeight = parentHandlesBottomSafeArea
-        ? Math.max(0, e.endCoordinates.height - insets.bottom)
-        : e.endCoordinates.height;
-      setKeyboardHeight(adjustedHeight);
-      keyboardAnimatedValue.setValue(adjustedHeight);
+        ? Math.max(0, event.endCoordinates.height - insets.bottom)
+        : event.endCoordinates.height;
+      keyboardVisibleRef.current = true;
+      animateToKeyboardOffset(Math.max(adjustedHeight, baseAnswerBottomOffset), event);
     });
 
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-      keyboardAnimatedValue.setValue(0);
+    const hideSub = Keyboard.addListener(hideEvent, (event) => {
+      keyboardVisibleRef.current = false;
+      animateToKeyboardOffset(baseAnswerBottomOffset, event);
     });
 
     return () => {
       showSub.remove();
       hideSub.remove();
     };
-  }, [onSubmitAnswer, keyboardAnimatedValue, parentHandlesBottomSafeArea, insets.bottom]);
+  }, [baseAnswerBottomOffset, keyboardAnimatedValue, parentHandlesBottomSafeArea, insets.bottom]);
+
+  useEffect(() => {
+    if (!keyboardVisibleRef.current) {
+      keyboardAnimatedValue.setValue(baseAnswerBottomOffset);
+    }
+  }, [baseAnswerBottomOffset, keyboardAnimatedValue]);
 
   // Reset on new question
   useEffect(() => {
@@ -354,6 +373,7 @@ export function QuizGameLayout({
   const mainActionLabel = showNextButton
     ? canGoNext ? 'Next' : 'Waiting for Host'
     : isQueued ? `Queued #${buzzQueuePosition}` : isBuzzLocked && allowBuzzQueue ? 'Join Queue' : 'Buzz';
+  const showMainActionIcon = !showMainActionLabel && (mainActionLabel === 'Buzz' || mainActionLabel === 'Next');
 
   // Handlers
   const handleWordIndexChange = (index: number) => {
@@ -397,9 +417,35 @@ export function QuizGameLayout({
 
   const safeAreaBottomPadding = parentHandlesBottomSafeArea ? 0 : insets.bottom;
   const contentPaddingBottom = bottomPadding + safeAreaBottomPadding + (questionOnly ? 0 : spacing.lg);
-  const answerBottomOffset = keyboardHeight > 0
-    ? keyboardAnimatedValue
-    : bottomPadding + (questionOnly ? 0 : spacing.md);
+  const answerInputContent = (
+    <>
+      {showSupplementalText && promptText ? (
+        <View style={styles.promptHintContainer}>
+          <ThemedText type="defaultSemiBold" style={[styles.promptHintText, { color: brandColor }]}>
+            {promptText}
+          </ThemedText>
+        </View>
+      ) : null}
+      {showSupplementalText && timerSeconds != null && timerSeconds > 0 && (
+        <View style={styles.timerContainer}>
+          <ThemedText type="defaultSemiBold" style={[
+            styles.timerCountdown,
+            { color: timerSeconds <= 3 ? dangerColor : brandColor },
+          ]}>
+            {timerSeconds}s
+          </ThemedText>
+        </View>
+      )}
+      <AnswerInput
+        value={answer}
+        onChangeText={handleAnswerChange}
+        onSubmit={handleSubmit}
+        disabled={!question || isLoading}
+        autoFocus
+        placeholder={showSupplementalText ? undefined : ''}
+      />
+    </>
+  );
 
   return (
     <View style={styles.root}>
@@ -512,16 +558,16 @@ export function QuizGameLayout({
                 opacity: mainButtonDisabled ? 0.35 : pressed ? 0.9 : 1,
               },
             ]}>
-            {showMainActionLabel ? (
-              <ThemedText type="defaultSemiBold" style={styles.actionLabel}>
-                {mainActionLabel}
-              </ThemedText>
-            ) : (
+            {showMainActionIcon ? (
               <MaterialIcons
                 name={showNextButton ? 'arrow-forward' : 'bolt'}
                 size={scale(28)}
                 color="#fff"
               />
+            ) : (
+              <ThemedText type="defaultSemiBold" style={styles.actionLabel}>
+                {mainActionLabel}
+              </ThemedText>
             )}
           </Pressable>
 
@@ -545,51 +591,17 @@ export function QuizGameLayout({
             { backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.5)' },
           ]}>
           <Pressable style={styles.answerOverlayTouchable} onPress={Keyboard.dismiss} />
-          <Animated.View style={[styles.answerInputContainer, { marginBottom: answerBottomOffset }]}>
-            {/* Prompt hint */}
-            {showSupplementalText && promptText ? (
-              <View style={styles.promptHintContainer}>
-                <ThemedText type="defaultSemiBold" style={[styles.promptHintText, { color: brandColor }]}>
-                  {promptText}
-                </ThemedText>
+          {Platform.OS === 'ios' ? (
+            <InputAccessoryView backgroundColor="transparent">
+              <View style={styles.answerInputContainer}>
+                {answerInputContent}
               </View>
-            ) : null}
-            {/* Timer display */}
-            {showSupplementalText && timerSeconds != null && timerSeconds > 0 && (
-              <View style={styles.timerContainer}>
-                <ThemedText type="defaultSemiBold" style={[
-                  styles.timerCountdown,
-                  { color: timerSeconds <= 3 ? dangerColor : brandColor },
-                ]}>
-                  {timerSeconds}s
-                </ThemedText>
-              </View>
-            )}
-            <AnswerInput
-              value={answer}
-              onChangeText={handleAnswerChange}
-              onSubmit={handleSubmit}
-              disabled={!question || isLoading}
-              autoFocus
-              placeholder={showSupplementalText ? undefined : ''}
-            />
-            <View style={styles.submitRow}>
-              <Pressable
-                onPress={handleSubmit}
-                accessibilityRole="button"
-                accessibilityLabel="Submit answer"
-                style={({ pressed }) => [
-                  styles.submitButton,
-                  { backgroundColor: brandColor, opacity: pressed ? 0.8 : 1 },
-                ]}>
-                {showSupplementalText ? (
-                  <ThemedText type="defaultSemiBold" style={styles.submitLabel}>Submit</ThemedText>
-                ) : (
-                  <MaterialIcons name="check" size={scale(24)} color="#fff" />
-                )}
-              </Pressable>
-            </View>
-          </Animated.View>
+            </InputAccessoryView>
+          ) : (
+            <Animated.View style={[styles.answerInputContainer, { marginBottom: keyboardAnimatedValue }]}>
+              {answerInputContent}
+            </Animated.View>
+          )}
         </View>
       )}
     </View>
@@ -686,22 +698,6 @@ const styles = StyleSheet.create({
   timerCountdown: {
     fontSize: responsiveFont(24),
     letterSpacing: 1,
-  },
-  submitRow: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
-  },
-  submitButton: {
-    borderRadius: scale(12),
-    paddingVertical: verticalScale(12),
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  submitLabel: {
-    color: '#fff',
-    fontSize: responsiveFont(16),
-    letterSpacing: 0.4,
   },
   buzzerOverlay: {
     ...StyleSheet.absoluteFillObject,
