@@ -2,7 +2,15 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Keyboard, Platform, Pressable, StyleSheet, View } from 'react-native';
+import {
+  Animated,
+  Keyboard,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 
 import { ThemedText } from '@/components/ThemedText';
 import { Colors } from '@/constants/Colors';
@@ -17,14 +25,75 @@ const BAR_HORIZONTAL_PADDING = scale(6);
 
 export const FLOATING_TAB_BAR_SURFACE_HEIGHT = BAR_HEIGHT;
 
+function waitForSettledFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      requestAnimationFrame(() => resolve());
+    }, 120);
+  });
+}
+
 export function FloatingTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
+  const { height: windowHeight } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
   const isDark = colorScheme === 'dark';
   const [barWidth, setBarWidth] = useState(0);
+  const [isWarmingTabs, setIsWarmingTabs] = useState(true);
   const activeIndex = useRef(new Animated.Value(state.index)).current;
   const liquidPulse = useRef(new Animated.Value(0)).current;
   const keyboardProgress = useRef(new Animated.Value(1)).current;
+  const didWarmTabs = useRef(false);
+  const initialTabState = useRef({
+    key: state.key,
+    index: state.index,
+    routes: state.routes,
+  });
+
+  useEffect(() => {
+    if (didWarmTabs.current) {
+      return;
+    }
+
+    didWarmTabs.current = true;
+    const { key, index, routes } = initialTabState.current;
+    const initialRoute = routes[index];
+    const routesToWarm = routes.filter((_, routeIndex) => routeIndex !== index);
+    let isCancelled = false;
+
+    const jumpToRoute = (route: typeof initialRoute) => {
+      navigation.dispatch({
+        type: 'JUMP_TO',
+        target: key,
+        payload: {
+          name: route.name,
+          params: route.params,
+        },
+      });
+    };
+
+    const warmTabs = async () => {
+      await waitForSettledFrame();
+
+      for (const route of routesToWarm) {
+        if (isCancelled) return;
+        jumpToRoute(route);
+        await waitForSettledFrame();
+      }
+
+      if (!isCancelled) {
+        jumpToRoute(initialRoute);
+        await waitForSettledFrame();
+        setIsWarmingTabs(false);
+      }
+    };
+
+    void warmTabs();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [navigation]);
 
   useEffect(() => {
     liquidPulse.setValue(0);
@@ -126,6 +195,18 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
           paddingBottom: bottomInset,
         },
       ]}>
+      {isWarmingTabs ? (
+        <View
+          pointerEvents="auto"
+          style={[
+            styles.warmupOverlay,
+            {
+              height: windowHeight,
+              backgroundColor: theme.background,
+            },
+          ]}
+        />
+      ) : null}
       <Animated.View
         pointerEvents="auto"
         style={[
@@ -197,7 +278,14 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
                   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 }
 
-                navigation.navigate(route.name, route.params);
+                navigation.dispatch({
+                  type: 'JUMP_TO',
+                  target: state.key,
+                  payload: {
+                    name: route.name,
+                    params: route.params,
+                  },
+                });
               }
             };
 
@@ -274,6 +362,13 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
+  },
+  warmupOverlay: {
+    position: 'absolute',
+    left: -spacing.lg,
+    right: -spacing.lg,
+    bottom: 0,
+    zIndex: 200,
   },
   bar: {
     height: BAR_HEIGHT,

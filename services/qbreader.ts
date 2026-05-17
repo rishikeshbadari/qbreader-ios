@@ -3,6 +3,7 @@ import type { Tossup } from '@/types/qb';
 
 const API_BASE = 'https://www.qbreader.org/api';
 const DEFAULT_TOSSUP_COUNT = 1;
+const MAX_TOSSUP_BATCH = 10;
 const MOCK_ENABLED = process.env.EXPO_PUBLIC_QBREADER_MOCK === '1';
 const FALLBACK_CATEGORIES = [
   'Literature',
@@ -86,12 +87,55 @@ function createAbortError(): Error {
   return error;
 }
 
+function getRetryAfterMs(value: string | null): number | null {
+  if (!value) return null;
+
+  const seconds = Number.parseInt(value, 10);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds * 1000;
+  }
+
+  const dateMs = Date.parse(value);
+  if (Number.isFinite(dateMs)) {
+    return Math.max(0, dateMs - Date.now());
+  }
+
+  return null;
+}
+
+async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) return;
+  if (signal?.aborted) throw createAbortError();
+
+  await new Promise<void>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      cleanup();
+      reject(createAbortError());
+    };
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', onAbort);
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 /**
  * Build the QBReader random tossup URL with optional filters applied.
  */
-function buildRandomTossupUrl(filters?: RandomTossupFilters): string {
+function buildRandomTossupUrl(count: number, filters?: RandomTossupFilters): string {
   const url = new URL(`${API_BASE}/random-tossup`);
-  url.searchParams.set('number', DEFAULT_TOSSUP_COUNT.toString());
+  const normalizedCount = Number.isFinite(count)
+    ? Math.min(MAX_TOSSUP_BATCH, Math.max(1, Math.floor(count)))
+    : DEFAULT_TOSSUP_COUNT;
+  url.searchParams.set('number', normalizedCount.toString());
 
   if (filters?.difficulties?.length) {
     url.searchParams.set('difficulties', filters.difficulties.join(','));
@@ -104,6 +148,59 @@ function buildRandomTossupUrl(filters?: RandomTossupFilters): string {
   return url.toString();
 }
 
+async function fetchRandomTossupsRaw(
+  count: number,
+  signal?: AbortSignal,
+  filters?: RandomTossupFilters
+): Promise<RawTossup[]> {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+
+  let attempt = 0;
+  let lastError: unknown;
+
+  while (attempt < 3) {
+    attempt += 1;
+    try {
+      const response = await fetch(buildRandomTossupUrl(count, filters), { signal });
+
+      if (response.ok) {
+        const payload = (await response.json()) as RandomTossupResponse | RawTossup[];
+        return extractTossups(payload);
+      }
+
+      if (response.status === 429 || response.status >= 500) {
+        if (attempt >= 3) {
+          throw new Error('Unable to reach QB Reader right now.');
+        }
+
+        const retryAfterMs = getRetryAfterMs(response.headers.get('Retry-After'));
+        const fallbackDelay = 250 * Math.pow(2, attempt - 1);
+        const delay = Math.min(2000, retryAfterMs ?? fallbackDelay);
+        await sleep(delay, signal);
+        continue;
+      }
+
+      throw new Error('Unable to reach QB Reader right now.');
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      lastError = error;
+
+      if (attempt >= 3) {
+        throw new Error('Unable to reach QB Reader right now.');
+      }
+
+      const delay = Math.min(2000, 250 * Math.pow(2, attempt - 1));
+      await sleep(delay, signal);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Unable to reach QB Reader right now.');
+}
+
 /**
  * Fetch a single random tossup from QBReader, normalizing the response into the
  * app's Tossup shape. When EXPO_PUBLIC_QBREADER_MOCK=1, returns a deterministic
@@ -114,36 +211,37 @@ export async function fetchRandomTossup(
   signal?: AbortSignal,
   filters?: RandomTossupFilters
 ): Promise<Tossup> {
+  const [tossup] = await fetchRandomTossups(DEFAULT_TOSSUP_COUNT, signal, filters);
+  return tossup;
+}
+
+/**
+ * Fetch multiple random tossups from QBReader in a single request.
+ */
+export async function fetchRandomTossups(
+  count: number,
+  signal?: AbortSignal,
+  filters?: RandomTossupFilters
+): Promise<Tossup[]> {
   if (signal?.aborted) {
     throw createAbortError();
   }
 
+  const normalizedCount = Number.isFinite(count)
+    ? Math.min(MAX_TOSSUP_BATCH, Math.max(1, Math.floor(count)))
+    : DEFAULT_TOSSUP_COUNT;
+
   if (MOCK_ENABLED) {
-    return mockTossup();
+    return Array.from({ length: normalizedCount }, () => mockTossup());
   }
 
-  let response: Response;
-  try {
-    response = await fetch(buildRandomTossupUrl(filters), { signal });
-  } catch (error) {
-    if (isAbortError(error)) {
-      throw error;
-    }
-    throw new Error('Unable to reach QB Reader right now.');
-  }
-
-  if (!response.ok) {
-    throw new Error('Unable to reach QB Reader right now.');
-  }
-
-  const payload = (await response.json()) as RandomTossupResponse | RawTossup[];
-  const tossups = extractTossups(payload);
+  const tossups = await fetchRandomTossupsRaw(normalizedCount, signal, filters);
 
   if (!tossups.length) {
     throw new Error('QB Reader did not return a tossup. Please try again.');
   }
 
-  return normalizeTossup(tossups[0]);
+  return tossups.map(normalizeTossup);
 }
 
 /**

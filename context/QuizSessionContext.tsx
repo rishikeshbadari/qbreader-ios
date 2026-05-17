@@ -10,11 +10,13 @@ import {
   useState,
 } from 'react';
 
-import { fetchRandomTossup } from '@/services/qbreader';
+import { fetchRandomTossups } from '@/services/qbreader';
 import { useSettings } from '@/hooks/useSettings';
 import type { AnswerResult, SessionHistoryEntry, Tossup } from '@/types/qb';
 
 const MAX_HISTORY_ENTRIES = 200;
+const PREFETCH_TARGET = 10;
+const PREFETCH_LOW_WATER = 3;
 
 interface QuizSessionContextValue {
   currentQuestion?: Tossup;
@@ -40,6 +42,8 @@ const QuizSessionContext = createContext<QuizSessionContextValue | undefined>(
 export function QuizSessionProvider({ children }: PropsWithChildren) {
   const abortRef = useRef<AbortController | null>(null);
   const prefetchAbortRef = useRef<AbortController | null>(null);
+  const prefetchKeyRef = useRef<string | null>(null);
+  const prefetchPromiseRef = useRef<Promise<void> | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<Tossup>();
   const [nextQuestions, setNextQuestions] = useState<Tossup[]>([]);
   const [loadingQuestion, setLoadingQuestion] = useState(false);
@@ -64,58 +68,86 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
 
   const nextQuestionsRef = useRef<Tossup[]>([]);
 
-  useEffect(() => {
-    nextQuestionsRef.current = nextQuestions;
-  }, [nextQuestions]);
+  const buildFiltersKey = useCallback((filters: ReturnType<typeof buildFilters>) => {
+    const difficulties = filters.difficulties ? [...filters.difficulties].sort((a, b) => a - b) : [];
+    const categories = filters.categories ? [...filters.categories].sort() : [];
+    return `${difficulties.join(',')}|${categories.join(',')}`;
+  }, []);
 
   /**
-   * Preload additional tossups into a queue to keep gameplay responsive.
+   * Preload additional tossups into a queue to keep gameplay responsive while
+   * staying comfortably under the QBReader rate limit.
    */
-  const primeNextQuestion = useCallback(
-    async (desiredLength = 2, existingLength?: number) => {
-      prefetchAbortRef.current?.abort();
-      const prefetchController = new AbortController();
-      prefetchAbortRef.current = prefetchController;
+  const ensurePrefetched = useCallback(async (force = false) => {
+    const filters = buildFilters();
+    const key = buildFiltersKey(filters);
 
+    const currentLength = nextQuestionsRef.current.length;
+    if (!force && currentLength > PREFETCH_LOW_WATER) {
+      return;
+    }
+
+    const needed = PREFETCH_TARGET - currentLength;
+    if (needed <= 0) {
+      return;
+    }
+
+    // Reuse in-flight prefetch if it matches the same filter key.
+    if (prefetchKeyRef.current === key && prefetchPromiseRef.current) {
+      return prefetchPromiseRef.current;
+    }
+
+    prefetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    prefetchAbortRef.current = controller;
+    prefetchKeyRef.current = key;
+
+    const promise = (async () => {
       try {
-        const currentLength =
-          typeof existingLength === 'number'
-            ? existingLength
-            : nextQuestionsRef.current.length;
-        const needed = desiredLength - currentLength;
-        if (needed <= 0) {
+        const incoming = await fetchRandomTossups(needed, controller.signal, filters);
+        if (controller.signal.aborted) {
           return;
         }
-        const filters = buildFilters();
-        const incoming = await Promise.all(
-          Array.from({ length: needed }, () =>
-            fetchRandomTossup(prefetchController.signal, filters)
-          )
-        );
-        setNextQuestions((prev) => [...prev, ...incoming]);
+
+        // Filters may have changed while the request was in flight; drop results if so.
+        const latestKey = buildFiltersKey(buildFilters());
+        if (latestKey !== key) {
+          return;
+        }
+
+        const merged = [...nextQuestionsRef.current, ...incoming];
+        nextQuestionsRef.current = merged;
+        setNextQuestions(merged);
       } catch (err) {
         if ((err as Error).name === 'AbortError') {
           return;
         }
         console.error('Failed to prefetch tossup', err);
+      } finally {
+        if (prefetchKeyRef.current === key) {
+          prefetchPromiseRef.current = null;
+        }
       }
-    },
-    [buildFilters]
-  );
+    })();
+
+    prefetchPromiseRef.current = promise;
+    return promise;
+  }, [buildFilters, buildFiltersKey]);
 
   useEffect(() => {
-    void primeNextQuestion(2);
+    void ensurePrefetched(true);
 
     return () => {
       prefetchAbortRef.current?.abort();
     };
-  }, [primeNextQuestion]);
+  }, [ensurePrefetched]);
 
   useEffect(() => {
     setNextQuestions([]);
     setCurrentQuestion(undefined);
-    void primeNextQuestion(2, 0);
-  }, [selectedCategories, selectedDifficulties, primeNextQuestion]);
+    nextQuestionsRef.current = [];
+    void ensurePrefetched(true);
+  }, [selectedCategories, selectedDifficulties, ensurePrefetched]);
 
   /**
    * Pop the next queued tossup (or fetch one) and update current state.
@@ -131,23 +163,57 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     setPromptInfo(null);
     promptedRef.current = false;
 
-    const queuedQuestions = nextQuestionsRef.current;
+    let queuedQuestions = nextQuestionsRef.current;
     if (queuedQuestions.length > 0) {
       const [next, ...rest] = queuedQuestions;
       nextQuestionsRef.current = rest;
       setCurrentQuestion(next);
       setNextQuestions(rest);
       setLoadingQuestion(false);
-      void primeNextQuestion(2, rest.length);
+      void ensurePrefetched();
       return;
     }
 
-    prefetchAbortRef.current?.abort();
+    // If we're already prefetching for the same filters, wait for it rather than
+    // aborting and starting a redundant request.
+    const currentFiltersKey = buildFiltersKey(buildFilters());
+    if (prefetchKeyRef.current === currentFiltersKey && prefetchPromiseRef.current) {
+      try {
+        await prefetchPromiseRef.current;
+      } catch {
+        // ignore; failures are already logged in ensurePrefetched
+      }
+      queuedQuestions = nextQuestionsRef.current;
+      if (queuedQuestions.length > 0) {
+        const [next, ...rest] = queuedQuestions;
+        nextQuestionsRef.current = rest;
+        setCurrentQuestion(next);
+        setNextQuestions(rest);
+        setLoadingQuestion(false);
+        void ensurePrefetched();
+        return;
+      }
+    }
+
+    // Any remaining in-flight prefetch is now redundant (different filters or failed),
+    // so abort it to save bandwidth before doing an on-demand batch fetch.
+    if (prefetchKeyRef.current && prefetchKeyRef.current !== currentFiltersKey) {
+      prefetchAbortRef.current?.abort();
+      prefetchKeyRef.current = null;
+      prefetchPromiseRef.current = null;
+    }
 
     try {
-      const tossup = await fetchRandomTossup(abortController.signal, buildFilters());
-      setCurrentQuestion(tossup);
-      void primeNextQuestion(2);
+      const tossups = await fetchRandomTossups(
+        PREFETCH_TARGET,
+        abortController.signal,
+        buildFilters()
+      );
+      const [first, ...rest] = tossups;
+      nextQuestionsRef.current = rest;
+      setCurrentQuestion(first);
+      setNextQuestions(rest);
+      void ensurePrefetched();
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
         return;
@@ -162,7 +228,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     } finally {
       setLoadingQuestion(false);
     }
-  }, [buildFilters, primeNextQuestion]);
+  }, [buildFilters, buildFiltersKey, ensurePrefetched]);
 
   /**
    * Judge a user's answer against the current tossup and append to history.

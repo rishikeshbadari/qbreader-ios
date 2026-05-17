@@ -6,15 +6,22 @@ import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 
+// Warm tab route modules at startup so first tab switches don't evaluate them.
+import './history';
+import './multiplayer';
+import './settings';
+
 export default function TabLayout() {
   const colorScheme = useColorScheme();
 
   return (
     <Tabs
+      detachInactiveScreens={false}
       tabBar={(props) => <FloatingTabBar {...props} />}
       screenOptions={{
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
+        lazy: false,
         tabBarHideOnKeyboard: true,
         tabBarStyle: {
           position: 'absolute',
