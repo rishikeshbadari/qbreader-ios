@@ -55,6 +55,7 @@ type Props = {
   onNext: () => void;
   onRetry?: () => void;
   onBuzzTyping?: (text: string) => void;
+  onWordIndexChange?: (wordIndex: number) => void;
 
   // Optional overlay
   overlay?: React.ReactNode;
@@ -107,6 +108,7 @@ export function QuizGameLayout({
   onNext,
   onRetry,
   onBuzzTyping,
+  onWordIndexChange,
   overlay,
   topAccessory,
   questionOnly = false,
@@ -138,6 +140,10 @@ export function QuizGameLayout({
   const stateRef = useRef({ isPlaying, hasBuzzed: activeHasBuzzed, result, answer });
   stateRef.current = { isPlaying, hasBuzzed: activeHasBuzzed, result, answer };
   const submittedRef = useRef(false);
+
+  useEffect(() => {
+    wordIndexRef.current = 0;
+  }, [question?.id, question?.question]);
 
   // Local timer end for the buzzing player (fallback when coordinator's buzzTimerEnd hasn't arrived)
   const [localBuzzEnd, setLocalBuzzEnd] = useState<number | null>(null);
@@ -350,6 +356,7 @@ export function QuizGameLayout({
   // Handlers
   const handleWordIndexChange = (index: number) => {
     wordIndexRef.current = index;
+    onWordIndexChange?.(index);
   };
 
   const handleBuzz = () => {
@@ -414,6 +421,7 @@ export function QuizGameLayout({
           {/* Question Card */}
           <View style={styles.questionWrapper}>
             <QuestionCard
+              key={question?.id ?? question?.question ?? 'empty-question'}
               tossup={question ?? undefined}
               isLoading={isLoading}
               error={error}

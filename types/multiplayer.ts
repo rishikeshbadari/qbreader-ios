@@ -120,7 +120,7 @@ export type GameEvent =
   | { type: 'host:transfer'; newHostId: string }
   | { type: 'game:start'; settings: GameSettings; hostId: string }
   | { type: 'game:countdown'; seconds: number }
-  | { type: 'game:pause'; playerId?: string; playerName?: string; pausedAt?: number }
+  | { type: 'game:pause'; playerId?: string; playerName?: string; pausedAt?: number; pausedWordIndex?: number }
   | { type: 'game:resume'; resumedAt?: number }
   | { type: 'game:end'; summary?: GameSummary }
   | { type: 'game:settings'; settings: GameSettings }

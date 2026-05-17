@@ -103,6 +103,7 @@ export default function PlayScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
       <QuizGameLayout
+        key={currentQuestion?.id ?? currentQuestion?.question ?? 'empty-question'}
         title="QuizBowl Practice"
         subtitle="Powered by QBReader. Fresh tossups every time you buzz."
         showHeader={false}

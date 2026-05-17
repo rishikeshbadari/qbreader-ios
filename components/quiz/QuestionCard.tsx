@@ -9,6 +9,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import type { AnswerResult, Tossup } from '@/types/qb';
 import { directiveLabel, normalizeDirective } from '@/utils/directives';
+import { getRevealIntervalMs, getVisibleWordCountForTime } from '@/utils/revealTiming';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 interface Props {
@@ -62,6 +63,7 @@ export function QuestionCard({
   const [hasRevealedFullQuestion, setHasRevealedFullQuestion] = useState(false);
   const wordsRef = useRef<string[]>([]);
   const revealIndexRef = useRef(0);
+  const revealStartTimeRef = useRef(revealStartTime);
   const revealIntervalMs = getRevealIntervalMs(effectiveRevealSpeed);
   const scrollPaddingBottom = 0;
   const shouldAnimateQuestion =
@@ -77,11 +79,15 @@ export function QuestionCard({
 
   useEffect(() => {
     setHasRevealedFullQuestion(false);
-  }, [tossup?.id]);
+  }, [tossup?.id, tossup?.question]);
 
   useEffect(() => {
     onWordIndexChangeRef.current = onWordIndexChange;
   }, [onWordIndexChange]);
+
+  useEffect(() => {
+    revealStartTimeRef.current = revealStartTime;
+  }, [revealStartTime]);
 
   const clearAnimationTimeout = () => {
     if (animationTimeout.current) {
@@ -111,23 +117,48 @@ export function QuestionCard({
     const words = questionText.split(/\s+/).filter(Boolean);
     wordsRef.current = words;
 
-    if (showAnswer || hasRevealedFullQuestion || revealIntervalMs === 0) {
+    const currentRevealStartTime = revealStartTimeRef.current;
+
+    if (showAnswer || revealIntervalMs === 0) {
       revealIndexRef.current = words.length;
       setDisplayedQuestion(questionText);
       onWordIndexChangeRef.current?.(words.length);
-      if ((showAnswer || revealIntervalMs === 0) && !hasRevealedFullQuestion) {
+      if (!hasRevealedFullQuestion) {
         setHasRevealedFullQuestion(true);
       }
       return;
     }
 
+    if (hasRevealedFullQuestion) {
+      if (currentRevealStartTime != null && revealIntervalMs > 0) {
+        const visibleWordCount = getVisibleWordCountForTime(
+          currentRevealStartTime,
+          revealIntervalMs,
+          words.length,
+        );
+        if (visibleWordCount < words.length) {
+          revealIndexRef.current = visibleWordCount;
+          setDisplayedQuestion(words.slice(0, visibleWordCount).join(' '));
+          onWordIndexChangeRef.current?.(visibleWordCount);
+          setHasRevealedFullQuestion(false);
+          return;
+        }
+      }
+
+      revealIndexRef.current = words.length;
+      setDisplayedQuestion(questionText);
+      onWordIndexChangeRef.current?.(words.length);
+      return;
+    }
+
     if (shouldAnimateQuestion && words.length > 0) {
       let visibleWordCount = 1;
-      if (revealStartTime != null && revealIntervalMs > 0) {
-        const elapsed = Date.now() - revealStartTime;
-        visibleWordCount = elapsed < 0
-          ? 0
-          : Math.min(Math.floor(elapsed / revealIntervalMs) + 1, words.length);
+      if (currentRevealStartTime != null && revealIntervalMs > 0) {
+        visibleWordCount = getVisibleWordCountForTime(
+          currentRevealStartTime,
+          revealIntervalMs,
+          words.length,
+        );
       }
 
       revealIndexRef.current = visibleWordCount;
@@ -148,9 +179,9 @@ export function QuestionCard({
     isLoading,
     error,
     showAnswer,
+    revealStartTime,
     hasRevealedFullQuestion,
     revealIntervalMs,
-    revealStartTime,
     shouldAnimateQuestion,
   ]);
 
@@ -158,7 +189,7 @@ export function QuestionCard({
   const initialSyncAppliedRef = useRef(false);
   useEffect(() => {
     initialSyncAppliedRef.current = false;
-  }, [tossup?.id]);
+  }, [tossup?.id, tossup?.question]);
 
   useEffect(() => {
     if (!isRevealRunning) {
@@ -238,7 +269,7 @@ export function QuestionCard({
     return () => {
       clearAnimationTimeout();
     };
-  }, [isRevealRunning, tossup?.id, revealIntervalMs, revealStartTime]);
+  }, [isRevealRunning, tossup?.id, tossup?.question, revealIntervalMs, revealStartTime]);
 
   // Scroll effect
   useEffect(() => {
@@ -539,14 +570,4 @@ function getResultColor(
     return brandColor;
   }
   return errorColor;
-}
-
-function getRevealIntervalMs(revealSpeed: number): number {
-  const clamped = Math.min(1, Math.max(0, revealSpeed));
-  if (clamped >= 0.99) {
-    return 0;
-  }
-  const slowestMs = 650;
-  const fastestMs = 80;
-  return Math.round(slowestMs - (slowestMs - fastestMs) * clamped);
 }

@@ -25,6 +25,12 @@ import type { AnswerResult, Tossup } from '@/types/qb';
 import { createTransport, type MultiplayerTransport } from '@/services/multiplayer/transport';
 import { SupabaseTransport } from '@/services/multiplayer/supabase-transport';
 import { fetchRandomTossup } from '@/services/qbreader';
+import {
+  getQuestionWordCount,
+  getRevealIntervalMs,
+  getRevealStartTimeForWordIndex,
+  getVisibleWordCountForTime,
+} from '@/utils/revealTiming';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Utilities
@@ -102,6 +108,7 @@ type MultiplayerContextValue = {
   buzzIn: (wordIndex?: number) => Promise<void>;
   submitBuzzAnswer: (answer: string) => Promise<void>;
   sendBuzzTyping: (text: string) => void;
+  syncRevealWordIndex: (wordIndex: number) => void;
   noBuzzTimeout: (questionId?: string) => Promise<void>;
   pauseGame: () => Promise<void>;
   resumeGame: () => Promise<void>;
@@ -172,6 +179,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const coordinatorClockOffsetRef = useRef(0);
   const bestClockSyncRttRef = useRef<number | null>(null);
   const revealPausedAtRef = useRef<number | null>(null);
+  const revealPausedWordIndexRef = useRef<number | null>(null);
+  const currentRevealWordIndexRef = useRef<number | null>(null);
 
   // Prompt state: tracks if a player has been prompted to give a more specific answer
   const [promptText, setPromptText] = useState<string | null>(null);
@@ -335,6 +344,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     coordinatorClockOffsetRef.current = 0;
     bestClockSyncRttRef.current = null;
     revealPausedAtRef.current = null;
+    revealPausedWordIndexRef.current = null;
+    currentRevealWordIndexRef.current = null;
     if (buzzTimerRef.current) {
       clearTimeout(buzzTimerRef.current);
       buzzTimerRef.current = null;
@@ -365,6 +376,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setBuzzWordIndex(undefined);
     setBuzzerResult(null);
     revealPausedAtRef.current = null;
+    revealPausedWordIndexRef.current = null;
+    currentRevealWordIndexRef.current = null;
     setBuzzQueue([]);
     buzzQueueRef.current = [];
     queuedBuzzWordIndexRef.current = {};
@@ -429,7 +442,28 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     }, Math.max(0, endTime - Date.now()));
   }, [clearBuzzTimer, coordinatorTimeToLocal, getCoordinatorNow, isCoordinatorFn, send]);
 
-  const applyGamePause = useCallback((playerId?: string, playerName?: string, pausedAt?: number) => {
+  const getCurrentRevealWordIndex = useCallback(() => {
+    const { currentQuestion, revealStartTime, settings } = stateRef.current;
+    if (!currentQuestion) return null;
+    if (typeof currentRevealWordIndexRef.current === 'number') {
+      return currentRevealWordIndexRef.current;
+    }
+    if (revealStartTime == null || !settings) return null;
+
+    const revealIntervalMs = getRevealIntervalMs(settings.revealSpeed);
+    return getVisibleWordCountForTime(
+      revealStartTime,
+      revealIntervalMs,
+      getQuestionWordCount(currentQuestion.question),
+    );
+  }, []);
+
+  const applyGamePause = useCallback((
+    playerId?: string,
+    playerName?: string,
+    pausedAt?: number,
+    pausedWordIndex?: number,
+  ) => {
     setStatus('paused');
     setIsBuzzLocked(true);
     setPausedByPlayerId(playerId ?? null);
@@ -440,22 +474,39 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       revealPausedAtRef.current = pausedAt != null
         ? coordinatorTimeToLocal(pausedAt)
         : Date.now();
+      revealPausedWordIndexRef.current = typeof pausedWordIndex === 'number'
+        ? pausedWordIndex
+        : getCurrentRevealWordIndex();
     }
-  }, [coordinatorTimeToLocal]);
+  }, [coordinatorTimeToLocal, getCurrentRevealWordIndex]);
 
   const applyGameResume = useCallback((resumedAt?: number) => {
     const pausedAt = revealPausedAtRef.current;
+    const pausedWordIndex = revealPausedWordIndexRef.current;
     if (pausedAt != null) {
       const resumedLocal = resumedAt != null
         ? coordinatorTimeToLocal(resumedAt)
         : Date.now();
-      const pauseDuration = Math.max(0, resumedLocal - pausedAt);
-      if (pauseDuration > 0) {
-        setRevealStartTime(previous => (
-          previous == null ? previous : previous + pauseDuration
+      const { currentQuestion, settings } = stateRef.current;
+      const revealIntervalMs = settings ? getRevealIntervalMs(settings.revealSpeed) : 0;
+
+      if (currentQuestion && pausedWordIndex != null && revealIntervalMs > 0) {
+        currentRevealWordIndexRef.current = pausedWordIndex;
+        setRevealStartTime(getRevealStartTimeForWordIndex(
+          pausedWordIndex,
+          revealIntervalMs,
+          resumedLocal,
         ));
+      } else {
+        const pauseDuration = Math.max(0, resumedLocal - pausedAt);
+        if (pauseDuration > 0) {
+          setRevealStartTime(previous => (
+            previous == null ? previous : previous + pauseDuration
+          ));
+        }
       }
       revealPausedAtRef.current = null;
+      revealPausedWordIndexRef.current = null;
     }
 
     setStatus('playing');
@@ -629,6 +680,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setPromptText(null);
     promptedPlayerRef.current = null;
     revealPausedAtRef.current = null;
+    revealPausedWordIndexRef.current = null;
+    currentRevealWordIndexRef.current = null;
     setPausedByPlayerId(null);
     setPausedByName(null);
     clearBuzzTimer();
@@ -674,6 +727,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setPromptText(null);
     promptedPlayerRef.current = null;
     revealPausedAtRef.current = null;
+    revealPausedWordIndexRef.current = null;
+    currentRevealWordIndexRef.current = null;
     setPausedByPlayerId(null);
     setPausedByName(null);
     clearBuzzTimer();
@@ -994,6 +1049,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         clearBuzzQueue();
         setCountdownSeconds(null);
         revealPausedAtRef.current = null;
+        revealPausedWordIndexRef.current = null;
+        currentRevealWordIndexRef.current = null;
         setPausedByPlayerId(null);
         setPausedByName(null);
         if (event.hostId) setHostId(event.hostId);
@@ -1004,7 +1061,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       }
 
       case 'game:pause': {
-        applyGamePause(event.playerId, event.playerName, event.pausedAt);
+        applyGamePause(event.playerId, event.playerName, event.pausedAt, event.pausedWordIndex);
         break;
       }
 
@@ -1034,6 +1091,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setBuzzWordIndex(undefined);
         setPromptText(null);
         promptedPlayerRef.current = null;
+        currentRevealWordIndexRef.current = null;
         clearPendingTyping();
         clearBuzzQueue();
         break;
@@ -1059,8 +1117,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
       case 'question:new': {
         // Fallback path: question data arrives with the reveal signal
-        setCurrentQuestion(event.tossup);
         setCurrentResult(null);
+        setCurrentQuestion(event.tossup);
         setCurrentBuzzer(null);
         activeBuzzerIdRef.current = null;
         setIsBuzzLocked(false);
@@ -1081,6 +1139,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setPromptText(null);
         promptedPlayerRef.current = null;
         revealPausedAtRef.current = null;
+        revealPausedWordIndexRef.current = null;
+        currentRevealWordIndexRef.current = null;
         setPausedByPlayerId(null);
         setPausedByName(null);
         clearPendingTyping();
@@ -1111,8 +1171,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         const preloaded = preloadedQuestionRef.current;
         if (preloaded) {
           preloadedQuestionRef.current = null;
-          setCurrentQuestion(preloaded.tossup);
           setCurrentResult(null);
+          setCurrentQuestion(preloaded.tossup);
           setCurrentBuzzer(null);
           activeBuzzerIdRef.current = null;
           setIsBuzzLocked(false);
@@ -1129,6 +1189,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           setPromptText(null);
           promptedPlayerRef.current = null;
           revealPausedAtRef.current = null;
+          revealPausedWordIndexRef.current = null;
+          currentRevealWordIndexRef.current = null;
           setPausedByPlayerId(null);
           setPausedByName(null);
           clearPendingTyping();
@@ -1691,6 +1753,10 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     }, remaining);
   }, [send]);
 
+  const syncRevealWordIndex = useCallback((wordIndex: number) => {
+    currentRevealWordIndexRef.current = wordIndex;
+  }, []);
+
   /** No one buzzed and the timer expired — show answer, no points. */
   const noBuzzTimeout = useCallback(async (questionId?: string) => {
     const { currentResult, currentQuestion } = stateRef.current;
@@ -1711,14 +1777,16 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const pauseGame = useCallback(async () => {
     const player = stateRef.current.selfPlayer;
     const pausedAt = getCoordinatorNow();
-    applyGamePause(player?.id, player?.name, pausedAt);
+    const pausedWordIndex = getCurrentRevealWordIndex() ?? undefined;
+    applyGamePause(player?.id, player?.name, pausedAt, pausedWordIndex);
     void send({
       type: 'game:pause',
       playerId: player?.id,
       playerName: player?.name,
       pausedAt,
+      pausedWordIndex,
     });
-  }, [applyGamePause, getCoordinatorNow, send]);
+  }, [applyGamePause, getCoordinatorNow, getCurrentRevealWordIndex, send]);
 
   const resumeGame = useCallback(async () => {
     const resumedAt = getCoordinatorNow();
@@ -1749,6 +1817,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setBuzzWordIndex(undefined);
     setPromptText(null);
     promptedPlayerRef.current = null;
+    currentRevealWordIndexRef.current = null;
     clearPendingTyping();
     clearBuzzQueue(true);
     setStatus('paused');
@@ -1928,6 +1997,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     buzzIn,
     submitBuzzAnswer,
     sendBuzzTyping,
+    syncRevealWordIndex,
     noBuzzTimeout,
     pauseGame,
     resumeGame,
@@ -1944,7 +2014,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     hostId, scores, isHostValue, isCoordinatorValue, buzzTimerEnd, revealStartTime,
     buzzerAnswer, buzzerResult, promptText, buzzQueuePosition, pausedByPlayerId, pausedByName,
     readyPlayers, connectionStatuses, countdownSeconds, playerColors,
-    hostGame, joinGame, startNextQuestion, buzzIn, submitBuzzAnswer, sendBuzzTyping, noBuzzTimeout,
+    hostGame, joinGame, startNextQuestion, buzzIn, submitBuzzAnswer, sendBuzzTyping, syncRevealWordIndex, noBuzzTimeout,
     pauseGame, resumeGame, updateSettings, endGame, leaveGame,
     toggleReady, kickPlayer, transferHost, startGameCountdown,
   ]);

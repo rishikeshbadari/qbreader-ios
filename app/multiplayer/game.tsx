@@ -45,6 +45,7 @@ export default function MultiplayerGameScreen() {
   const insets = useSafeAreaInsets();
 
   const {
+    sessionId,
     status,
     players,
     allPlayers,
@@ -65,6 +66,7 @@ export default function MultiplayerGameScreen() {
     buzzIn,
     submitBuzzAnswer,
     sendBuzzTyping,
+    syncRevealWordIndex,
     buzzerAnswer,
     buzzerResult,
     promptText,
@@ -84,6 +86,12 @@ export default function MultiplayerGameScreen() {
       router.replace('/multiplayer/summary');
     }
   }, [status, router]);
+
+  useEffect(() => {
+    if (!sessionId && status !== 'ended') {
+      router.replace('/multiplayer');
+    }
+  }, [sessionId, status, router]);
 
   const { availableCategories, availableDifficulties, revealSpeed } = useSettings();
   const [showSettings, setShowSettings] = useState(false);
@@ -222,6 +230,7 @@ export default function MultiplayerGameScreen() {
   return (
     <ThemedView style={[styles.gameContainer, { paddingTop: insets.top }]}>
       <QuizGameLayout
+        key={currentQuestion?.id ?? currentQuestion?.question ?? 'empty-question'}
         title="Multiplayer"
         subtitle={null}
         showHeader={false}
@@ -296,6 +305,7 @@ export default function MultiplayerGameScreen() {
         onBuzz={(wordIndex) => void buzzIn(wordIndex)}
         onSubmitAnswer={submitBuzzAnswer}
         onBuzzTyping={sendBuzzTyping}
+        onWordIndexChange={syncRevealWordIndex}
         onNoBuzzTimeout={noBuzzTimeout}
         promptText={promptText}
         onNext={startNextQuestion}
