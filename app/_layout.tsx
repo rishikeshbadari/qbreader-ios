@@ -38,6 +38,14 @@ export default function RootLayout() {
             <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
               <Stack>
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen
+                  name="history/[filter]"
+                  options={{
+                    headerShown: false,
+                    gestureEnabled: true,
+                    fullScreenGestureEnabled: true,
+                  }}
+                />
                 <Stack.Screen name="multiplayer" options={{ headerShown: false }} />
                 <Stack.Screen name="+not-found" />
               </Stack>

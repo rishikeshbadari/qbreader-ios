@@ -7,7 +7,7 @@ import { useThemeColor } from '@/hooks/useThemeColor';
 import type { SessionStats as SessionStatsType } from '@/types/qb';
 import { responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
-export type SessionStatsCardKey = 'answered' | 'correct' | 'skipped' | 'incorrect' | 'streak';
+export type SessionStatsCardKey = 'answered' | 'correct' | 'skipped' | 'incorrect';
 
 interface Props {
   stats: SessionStatsType;
@@ -29,7 +29,6 @@ export function SessionStats({ stats, compact = false, onSelectCard }: Props) {
     { key: 'correct', label: 'Correct', value: stats.correct.toString(), interactive: true },
     { key: 'skipped', label: 'Skipped', value: stats.skipped.toString(), interactive: true },
     { key: 'incorrect', label: 'Incorrect', value: stats.incorrect.toString(), interactive: true },
-    { key: 'streak', label: 'Streak', value: `${stats.streak}` },
   ];
 
   const accuracyPercent = Math.round(stats.accuracy * 100);
@@ -115,15 +114,14 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   cardGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
     gap: spacing.sm,
   },
   card: {
     borderWidth: scale(1),
     borderRadius: 12,
     paddingHorizontal: spacing.md,
-    minWidth: '30%',
+    width: '100%',
   },
   cardLabel: {
     fontSize: responsiveFont(12),

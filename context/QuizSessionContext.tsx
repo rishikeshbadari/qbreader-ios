@@ -243,12 +243,16 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
       const answerline = currentQuestion.answerHtml || currentQuestion.answer;
 
       let result: AnswerResult;
-      try {
-        result = checkAnswer(answerline, sanitizedAnswer) as AnswerResult;
-      } catch (err) {
-        console.error('Failed to judge answer', err);
-        setError('Unable to check that answer. Please try again.');
-        return;
+      if (sanitizedAnswer.length === 0) {
+        result = { directive: 'skip' };
+      } else {
+        try {
+          result = checkAnswer(answerline, sanitizedAnswer) as AnswerResult;
+        } catch (err) {
+          console.error('Failed to judge answer', err);
+          setError('Unable to check that answer. Please try again.');
+          return;
+        }
       }
 
       // Handle prompts: give the player one more chance to be more specific

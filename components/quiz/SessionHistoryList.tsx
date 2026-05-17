@@ -69,13 +69,15 @@ export function SessionHistoryList({
   if (sections.length === 0) {
     return (
       <View style={style}>
-        {ListHeaderComponent}
-        <ThemedView
-          lightColor={Colors.light.surface}
-          darkColor={Colors.dark.surface}
-          style={[styles.emptyState, { borderColor }]}>
-          <ThemedText type="defaultSemiBold">No answers yet</ThemedText>
-        </ThemedView>
+        <View style={[styles.listContent, contentContainerStyle, styles.emptyContent]}>
+          {ListHeaderComponent}
+          <ThemedView
+            lightColor={Colors.light.surface}
+            darkColor={Colors.dark.surface}
+            style={[styles.emptyState, { borderColor }]}>
+            <ThemedText type="defaultSemiBold">No answers yet</ThemedText>
+          </ThemedView>
+        </View>
       </View>
     );
   }
@@ -159,6 +161,12 @@ const styles = StyleSheet.create({
     borderWidth: scale(1),
     padding: spacing.xl,
     gap: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: verticalScale(160),
+  },
+  emptyContent: {
+    flexGrow: 1,
   },
   historyRow: {
     borderRadius: scale(20),
