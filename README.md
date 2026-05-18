@@ -1,71 +1,96 @@
-# Welcome to your Expo app 👋
+# QuizBowl
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A lightweight iOS-first quizbowl app inspired by and powered by [QB Reader](https://www.qbreader.org/) and the open-source [qbreader/website](https://github.com/qbreader/website).
 
-## Get started
+QB Reader is a text-based quizbowl packet reader with single-player and multiplayer play, a large searchable question database, answer checking, and API access. This app keeps the mobile experience focused: fast tossup practice, low-friction multiplayer, local history, and simple settings.
 
-1. Install dependencies
+## Relationship to QB Reader
 
-   ```bash
-   npm install
-   ```
+This project is a smaller Expo / React Native client, not a replacement for the full QB Reader website.
 
-2. Start the app
+- Uses the QB Reader API for tossups and metadata.
+- Uses `qb-answer-checker` for answerline judging.
+- Focuses on a native-feeling iOS interface for reading, buzzing, settings, history, and multiplayer rooms.
+- Does not include the full website feature set such as database search, accounts, Geoword, frequency lists, packet tools, or site-wide community stats.
 
-   ```bash
-   npx expo start
-   ```
+Questions come from QB Reader’s database, which is built from packets hosted on [quizbowlpackets.com](https://quizbowlpackets.com/). Respect the original packet authors’ rights and non-commercial usage expectations.
 
-In the output, you'll find options to open the app in a
+## Features
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- Single-player tossup practice with progressive reveal and answer checking.
+- Local History with All, Correct, Skipped, and Incorrect views.
+- Category, difficulty, and reveal-speed settings.
+- Multiplayer rooms with game codes, host settings, ready states, synced reveal timing, buzzing, queueing, and summaries.
+- Supabase Realtime transport for production multiplayer.
+- Mock QBReader and loopback multiplayer modes for simulator playtesting.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## Tech Stack
 
-## Get a fresh project
+- Expo + React Native
+- Expo Router
+- TypeScript
+- Supabase Realtime
+- QB Reader API
+- `qb-answer-checker`
 
-When you're ready, run:
+## Getting Started
 
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
-
-## Dev Tools section in Settings
-
-The Settings tab has a "Dev Tools" section (Reset state, Start/Stop playtest peer) that is **only rendered when Metro is started with `EXPO_PUBLIC_USE_PAIRED_LOOPBACK=1`** — i.e. during an autonomous `/playtest` run. In a normal `npx expo start` session (including Expo Go on your phone), the section is hidden so it can't be confused with production state. The gate lives in [app/(tabs)/settings.tsx](app/(tabs)/settings.tsx) — search for `EXPO_PUBLIC_USE_PAIRED_LOOPBACK`.
-
-If you want the Dev Tools buttons during a manual session, restart Metro with:
+Install dependencies:
 
 ```bash
-EXPO_PUBLIC_USE_PAIRED_LOOPBACK=1 EXPO_PUBLIC_QBREADER_MOCK=1 npx expo start --ios
+npm install
 ```
 
-Note that this also switches multiplayer to the in-process `PairedLoopbackTransport`, so cross-device (phone + sim) multiplayer will not work in that mode — use the default start command for real Supabase multiplayer.
+Start the Expo dev server:
 
-## Architecture overview
+```bash
+npx expo start --ios
+```
 
-- **Routing & layout**: File-based routes under `app/` with a root stack (`app/_layout.tsx`) and tab navigator in `app/(tabs)/`. Multiplayer has its own stack under `app/multiplayer/`.
-- **State providers**: `context/SettingsContext.tsx` stores filters and reveal speed with AsyncStorage; `context/QuizSessionContext.tsx` manages single-player questions/history; `context/MultiplayerContext.tsx` coordinates session state, transport, and summaries.
-- **Services**: `services/qbreader.ts` wraps QBReader API calls and normalization; `services/multiplayer/transport.ts` provides platform transports; `services/voice.ts` handles TTS.
-- **UI components**: Themed primitives in `components/Themed*`, quiz-specific UI in `components/quiz/`, and shared UI utilities in `components/ui/`.
-- **Utilities & types**: `utils/` for text and directive helpers, `types/` for API/transport shapes, and `hooks/` for context accessors and derived session stats.
-- **Responsive system**: `utils/responsive.ts` supplies scale/verticalScale/moderateScale, spacing tokens, typography helpers, and breakpoints; UI components use these helpers instead of fixed pixel values.
+Use Expo Go. Do not run `expo run:ios` or `expo run:android` unless you intentionally want a native rebuild.
+
+## Useful Commands
+
+```bash
+npm run lint
+npx tsc --noEmit
+```
+
+For deterministic local multiplayer playtesting:
+
+```bash
+EXPO_PUBLIC_QBREADER_MOCK=1 EXPO_PUBLIC_USE_PAIRED_LOOPBACK=1 npx expo start --ios
+```
+
+That mode uses mocked questions and an in-process paired transport. Use the default start command for real cross-device Supabase multiplayer.
+
+## Project Map
+
+- `app/(tabs)/index.tsx` — single-player Play tab.
+- `app/(tabs)/history.tsx` — local single-player history.
+- `app/(tabs)/settings.tsx` — categories, difficulties, reveal speed, and contact links.
+- `app/(tabs)/multiplayer.tsx` — multiplayer hub.
+- `app/multiplayer/` — host, join, lobby, game, rules, summary, and match history routes.
+- `context/QuizSessionContext.tsx` — single-player question queue, judging, and history.
+- `context/MultiplayerContext.tsx` — multiplayer state machine, syncing, host/coordinator behavior, buzzing, and summaries.
+- `context/SettingsContext.tsx` — persisted user preferences.
+- `services/qbreader.ts` — QB Reader API access and normalization.
+- `services/multiplayer/` — Supabase, loopback, and test transports.
+- `components/quiz/` — shared game, history, stats, and input UI.
+
+## Notes for Contributors
+
+- Keep Expo Go compatibility.
+- Avoid native module additions unless necessary.
+- Keep changes focused and test with at least one iOS simulator.
+- Multiplayer correctness depends on coordinator and non-coordinator paths staying in sync.
+- When changing question flow, test buzzing, wrong answers, skips, late joins, and host settings changes.
+
+## Credits
+
+This app builds on the QB Reader ecosystem:
+
+- [qbreader/website](https://github.com/qbreader/website) — the full web app.
+- [QB Reader API docs](https://www.qbreader.org/tools/api-docs/) — API reference.
+- [qbreader/python-module](https://github.com/qbreader/python-module) — Python API wrapper.
+- [qb-answer-checker](https://github.com/qbreader/qb-answer-checker) — answerline checking.

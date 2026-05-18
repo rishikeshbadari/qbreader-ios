@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,6 +24,24 @@ const isCompactScreen = deviceMetrics.height < 700;
 const dynamicGap = isCompactScreen ? verticalScale(8) : verticalScale(12);
 const sectionPadding = isCompactScreen ? spacing.md : spacing.lg;
 const chipPaddingV = isCompactScreen ? verticalScale(6) : verticalScale(8);
+
+const CONTACT_LINKS = [
+  {
+    label: 'Gmail',
+    url: 'mailto:badari.rishikesh@gmail.com',
+    icon: require('../../assets/images/gmail-logo.png'),
+  },
+  {
+    label: 'X',
+    url: 'https://x.com/rbadari_',
+    icon: require('../../assets/images/x.png'),
+  },
+  {
+    label: 'LinkedIn',
+    url: 'https://www.linkedin.com/in/rbadari/',
+    icon: require('../../assets/images/linkedin.png'),
+  },
+];
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme();
@@ -52,6 +70,14 @@ export default function SettingsScreen() {
   const errorColor = useThemeColor({}, 'error');
   const { sessionId } = useMultiplayer();
   const [peerActive, setPeerActive] = useState(isPlaytestPeerActive());
+
+  const handleOpenContact = useCallback(async (url: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Unable to open link', 'Please try again later.');
+    }
+  }, []);
 
   const handleResetState = () => {
     Alert.alert('Reset all state?', 'Clears AsyncStorage and reloads. Used by /playtest.', [
@@ -224,6 +250,25 @@ export default function SettingsScreen() {
           ) : null}
         </ThemedView>
 
+        <ThemedView lightColor={Colors.light.surface} darkColor={Colors.dark.surface} style={[styles.section, styles.contactSection, { borderColor }]}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>Contact</ThemedText>
+          <View style={styles.contactLinks}>
+            {CONTACT_LINKS.map((contact) => (
+              <Pressable
+                key={contact.label}
+                onPress={() => void handleOpenContact(contact.url)}
+                accessibilityRole="link"
+                accessibilityLabel={`Open ${contact.label}`}
+                style={({ pressed }) => [
+                  styles.contactLink,
+                  { borderColor, opacity: pressed ? 0.7 : 1 },
+                ]}>
+                <Image source={contact.icon} style={styles.contactIcon} resizeMode="contain" />
+              </Pressable>
+            ))}
+          </View>
+        </ThemedView>
+
         {loadingOptions && !showDifficultyPlaceholder && !showCategoryPlaceholder ? (
           <View style={styles.loadingRow}>
             <ActivityIndicator size="small" />
@@ -316,6 +361,25 @@ const styles = StyleSheet.create({
   actionLink: {
     fontSize: responsiveFont(14),
     fontWeight: '600',
+  },
+  contactSection: {
+    gap: spacing.md,
+  },
+  contactLinks: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  contactLink: {
+    alignItems: 'center',
+    borderRadius: scale(12),
+    borderWidth: StyleSheet.hairlineWidth,
+    height: verticalScale(46),
+    justifyContent: 'center',
+    width: verticalScale(46),
+  },
+  contactIcon: {
+    height: scale(24),
+    width: scale(24),
   },
   loadingRow: {
     flexDirection: 'row',
