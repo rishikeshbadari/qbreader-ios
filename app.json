@@ -56,6 +56,16 @@
           "dark": {
             "image": "./assets/images/qb_transparent.png",
             "backgroundColor": "#030712"
+          },
+          "ios": {
+            "image": "./assets/images/qb_transparent.png",
+            "imageWidth": 240,
+            "resizeMode": "contain",
+            "backgroundColor": "#F4F5FB",
+            "dark": {
+              "image": "./assets/images/qb_transparent.png",
+              "backgroundColor": "#030712"
+            }
           }
         }
       ]
