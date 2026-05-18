@@ -8,6 +8,15 @@
     "scheme": "quizbowl",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/qb_transparent.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F4F5FB",
+      "dark": {
+        "image": "./assets/images/qb_transparent.png",
+        "backgroundColor": "#030712"
+      }
+    },
     "ios": {
       "icon": "./assets/images/icon.png",
       "supportsTablet": true,
