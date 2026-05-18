@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { SCORING } from '@/types/multiplayer';
-import { responsiveFont, scale, spacing, verticalScale, MIN_TOUCH_TARGET } from '@/utils/responsive';
+import { responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 const RULES = [
   {
@@ -44,7 +44,6 @@ export default function MultiplayerRulesScreen() {
   const router = useRouter();
 
   const borderColor = useThemeColor({}, 'border');
-  const brandColor = useThemeColor({}, 'brand');
   const mutedColor = useThemeColor({}, 'muted');
 
   return (
@@ -75,15 +74,6 @@ export default function MultiplayerRulesScreen() {
           </View>
         ))}
       </ScrollView>
-
-      <Pressable
-        onPress={() => router.back()}
-        style={({ pressed }) => [
-          styles.button,
-          { backgroundColor: brandColor, opacity: pressed ? 0.8 : 1 },
-        ]}>
-        <ThemedText type="defaultSemiBold" style={styles.buttonLabel}>Got It</ThemedText>
-      </Pressable>
     </ThemedView>
   );
 }
@@ -126,15 +116,5 @@ const styles = StyleSheet.create({
   ruleBody: {
     fontSize: responsiveFont(14),
     lineHeight: responsiveFont(20),
-  },
-  button: {
-    borderRadius: scale(12),
-    paddingVertical: verticalScale(14),
-    alignItems: 'center',
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  buttonLabel: {
-    color: '#fff',
-    fontSize: responsiveFont(16),
   },
 });

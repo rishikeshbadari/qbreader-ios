@@ -7,13 +7,13 @@ import {
   Pressable,
   StyleSheet,
   View,
-  useWindowDimensions,
 } from 'react-native';
 
 import { ThemedText } from '@/components/ThemedText';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
+import { markStartupTabWarmupComplete } from '@/utils/startupWarmup';
 
 export const FLOATING_TAB_BAR_HEIGHT = 112;
 
@@ -27,17 +27,15 @@ function waitForSettledFrame(): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(() => {
       requestAnimationFrame(() => resolve());
-    }, 120);
+    }, 80);
   });
 }
 
 export function FloatingTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
-  const { height: windowHeight } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
   const isDark = colorScheme === 'dark';
   const [barWidth, setBarWidth] = useState(0);
-  const [isWarmingTabs, setIsWarmingTabs] = useState(true);
   const activeIndex = useRef(new Animated.Value(state.index)).current;
   const liquidPulse = useRef(new Animated.Value(0)).current;
   const didWarmTabs = useRef(false);
@@ -78,10 +76,12 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
         await waitForSettledFrame();
       }
 
+      if (isCancelled) return;
+      jumpToRoute(initialRoute);
+      await waitForSettledFrame();
+
       if (!isCancelled) {
-        jumpToRoute(initialRoute);
-        await waitForSettledFrame();
-        setIsWarmingTabs(false);
+        markStartupTabWarmupComplete();
       }
     };
 
@@ -160,18 +160,6 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
           paddingBottom: bottomInset,
         },
       ]}>
-      {isWarmingTabs ? (
-        <View
-          pointerEvents="auto"
-          style={[
-            styles.warmupOverlay,
-            {
-              height: windowHeight,
-              backgroundColor: theme.background,
-            },
-          ]}
-        />
-      ) : null}
       <Animated.View
         pointerEvents="auto"
         style={[
@@ -325,13 +313,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-  },
-  warmupOverlay: {
-    position: 'absolute',
-    left: -spacing.lg,
-    right: -spacing.lg,
-    bottom: 0,
-    zIndex: 200,
   },
   bar: {
     height: BAR_HEIGHT,

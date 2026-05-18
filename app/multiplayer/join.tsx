@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { InputAccessoryView, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ThemedText';
@@ -14,11 +14,13 @@ export default function JoinGameScreen() {
   const router = useRouter();
   const { joinGame } = useMultiplayer();
   const { code: deepLinkCode } = useLocalSearchParams<{ code?: string }>();
+  const codeInputRef = useRef<TextInput>(null);
 
   const [name, setName] = useState('');
   const [gameCode, setGameCode] = useState(deepLinkCode?.toUpperCase() ?? '');
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState<string>();
+  const [focusedField, setFocusedField] = useState<'name' | 'code' | null>(null);
 
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
@@ -26,6 +28,9 @@ export default function JoinGameScreen() {
   const textColor = useThemeColor({}, 'text');
   const mutedColor = useThemeColor({}, 'muted');
   const errorColor = useThemeColor({}, 'error');
+
+  const joinDisabled = isJoining || gameCode.length < 6;
+  const shouldShowJoinAccessory = focusedField === 'code' && gameCode.length > 0;
 
   const handleJoin = async () => {
     const trimmedCode = gameCode.trim().toUpperCase();
@@ -58,12 +63,31 @@ export default function JoinGameScreen() {
     }
   };
 
+  const renderJoinButton = () => (
+    <Pressable
+      onPress={handleJoin}
+      disabled={joinDisabled}
+      accessibilityRole="button"
+      accessibilityLabel="Join game"
+      accessibilityState={{ disabled: joinDisabled }}
+      testID="join-submit-accessory-button"
+      style={({ pressed }) => [
+        styles.button,
+        styles.accessoryButton,
+        {
+          backgroundColor: brandColor,
+          opacity: joinDisabled ? 0.5 : pressed ? 0.8 : 1,
+        },
+      ]}>
+      <ThemedText type="defaultSemiBold" style={styles.buttonLabel}>
+        {isJoining ? 'Joining...' : 'Join Game'}
+      </ThemedText>
+    </Pressable>
+  );
+
   return (
-    <KeyboardAvoidingView
-      style={styles.keyboardAvoid}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
+    <View style={styles.keyboardAvoid}>
+      <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg }]}>
         <View style={styles.content}>
           <View style={styles.header}>
             <Pressable
@@ -87,7 +111,10 @@ export default function JoinGameScreen() {
               style={[styles.input, { borderColor, color: textColor, backgroundColor: surfaceColor }]}
               value={name}
               onChangeText={setName}
+              onFocus={() => setFocusedField('name')}
               returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => codeInputRef.current?.focus()}
             />
           </View>
 
@@ -95,6 +122,7 @@ export default function JoinGameScreen() {
           <View style={[styles.section, { borderColor, backgroundColor: surfaceColor }]}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>Game Code</ThemedText>
             <TextInput
+              ref={codeInputRef}
               placeholder="ABC123"
               placeholderTextColor={mutedColor}
               accessibilityLabel="Game code"
@@ -102,6 +130,7 @@ export default function JoinGameScreen() {
               style={[styles.codeInput, { borderColor, color: textColor, backgroundColor: surfaceColor }]}
               value={gameCode}
               onChangeText={(text) => setGameCode(text.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
+              onFocus={() => setFocusedField('code')}
               autoCapitalize="characters"
               maxLength={6}
               returnKeyType="go"
@@ -112,27 +141,17 @@ export default function JoinGameScreen() {
           {error && <ThemedText style={[styles.error, { color: errorColor }]}>{error}</ThemedText>}
         </View>
 
-        {/* Join button */}
-        <Pressable
-          onPress={handleJoin}
-          disabled={isJoining || gameCode.length < 6}
-          accessibilityRole="button"
-          accessibilityLabel="Join game"
-          accessibilityState={{ disabled: isJoining || gameCode.length < 6 }}
-          testID="join-submit-button"
-          style={({ pressed }) => [
-            styles.button,
-            {
-              backgroundColor: brandColor,
-              opacity: isJoining || gameCode.length < 6 ? 0.5 : pressed ? 0.8 : 1,
-            },
-          ]}>
-          <ThemedText type="defaultSemiBold" style={styles.buttonLabel}>
-            {isJoining ? 'Joining...' : 'Join Game'}
-          </ThemedText>
-        </Pressable>
+        {Platform.OS === 'ios' ? (
+          <InputAccessoryView backgroundColor="transparent">
+            {shouldShowJoinAccessory ? (
+              <View style={styles.accessoryContainer}>
+                {renderJoinButton()}
+              </View>
+            ) : null}
+          </InputAccessoryView>
+        ) : null}
       </ThemedView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -144,7 +163,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    flex: 1,
     padding: spacing.lg,
     gap: spacing.lg,
   },
@@ -190,11 +208,18 @@ const styles = StyleSheet.create({
     fontSize: responsiveFont(14),
   },
   button: {
-    margin: spacing.lg,
     borderRadius: scale(12),
     paddingVertical: verticalScale(14),
     alignItems: 'center',
     minHeight: MIN_TOUCH_TARGET,
+  },
+  accessoryContainer: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  accessoryButton: {
+    width: '100%',
   },
   buttonLabel: {
     color: '#fff',

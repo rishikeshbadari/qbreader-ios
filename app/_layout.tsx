@@ -3,7 +3,8 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Image, StyleSheet, View } from 'react-native';
 import 'react-native-reanimated';
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -11,49 +12,151 @@ import { MultiplayerProvider } from '@/context/MultiplayerContext';
 import { QuizSessionProvider } from '@/context/QuizSessionContext';
 import { SettingsProvider } from '@/context/SettingsContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import {
+  isStartupTabWarmupComplete,
+  subscribeToStartupTabWarmup,
+} from '@/utils/startupWarmup';
 
 SplashScreen.preventAutoHideAsync();
+
+const LAUNCH_OVERLAY_POST_READY_MS = 450;
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
+  const hasHiddenSplashRef = useRef(false);
+  const hasFadedLaunchOverlayRef = useRef(false);
+  const launchOverlayFadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const launchOverlayOpacity = useRef(new Animated.Value(1)).current;
+  const [isAppLaidOut, setIsAppLaidOut] = useState(false);
+  const [isLaunchOverlayVisible, setIsLaunchOverlayVisible] = useState(true);
+  const [isNativeSplashHidden, setIsNativeSplashHidden] = useState(false);
+  const [isTabWarmupComplete, setIsTabWarmupComplete] = useState(isStartupTabWarmupComplete);
 
   useEffect(() => {
+    return () => {
+      if (launchOverlayFadeTimeoutRef.current) {
+        clearTimeout(launchOverlayFadeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    return subscribeToStartupTabWarmup(() => setIsTabWarmupComplete(true));
+  }, []);
+
+  useEffect(() => {
+    if (
+      !loaded ||
+      !isAppLaidOut ||
+      !isNativeSplashHidden ||
+      !isTabWarmupComplete ||
+      hasFadedLaunchOverlayRef.current
+    ) {
+      return;
+    }
+
+    hasFadedLaunchOverlayRef.current = true;
+    launchOverlayFadeTimeoutRef.current = setTimeout(() => {
+      launchOverlayFadeTimeoutRef.current = null;
+      Animated.timing(launchOverlayOpacity, {
+        toValue: 0,
+        duration: 320,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) {
+          setIsLaunchOverlayVisible(false);
+        }
+      });
+    }, LAUNCH_OVERLAY_POST_READY_MS);
+  }, [isAppLaidOut, isNativeSplashHidden, isTabWarmupComplete, launchOverlayOpacity, loaded]);
+
+  const handleLaunchOverlayLayout = useCallback(() => {
+    if (!hasHiddenSplashRef.current) {
+      hasHiddenSplashRef.current = true;
+      void SplashScreen.hideAsync()
+        .catch(() => undefined)
+        .finally(() => setIsNativeSplashHidden(true));
+    }
+  }, []);
+
+  const handleAppLayout = useCallback(() => {
     if (loaded) {
-      SplashScreen.hideAsync();
+      setIsAppLaidOut(true);
     }
   }, [loaded]);
 
-  if (!loaded) {
-    return null;
-  }
-
   return (
-    <ErrorBoundary>
-      <SettingsProvider>
-        <MultiplayerProvider>
-          <QuizSessionProvider>
-            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-              <Stack>
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen
-                  name="history/[filter]"
-                  options={{
-                    headerShown: false,
-                    gestureEnabled: true,
-                    fullScreenGestureEnabled: true,
-                  }}
-                />
-                <Stack.Screen name="multiplayer" options={{ headerShown: false }} />
-                <Stack.Screen name="+not-found" />
-              </Stack>
-              <StatusBar style="auto" />
-            </ThemeProvider>
-          </QuizSessionProvider>
-        </MultiplayerProvider>
-      </SettingsProvider>
-    </ErrorBoundary>
+    <View style={styles.root}>
+      {loaded ? (
+        <View style={styles.root} onLayout={handleAppLayout}>
+          <ErrorBoundary>
+            <SettingsProvider>
+              <MultiplayerProvider>
+                <QuizSessionProvider>
+                  <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                    <Stack>
+                      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                      <Stack.Screen
+                        name="history/[filter]"
+                        options={{
+                          headerShown: false,
+                          gestureEnabled: true,
+                          fullScreenGestureEnabled: false,
+                        }}
+                      />
+                      <Stack.Screen name="multiplayer" options={{ headerShown: false }} />
+                      <Stack.Screen name="+not-found" />
+                    </Stack>
+                    <StatusBar style="auto" />
+                  </ThemeProvider>
+                </QuizSessionProvider>
+              </MultiplayerProvider>
+            </SettingsProvider>
+          </ErrorBoundary>
+        </View>
+      ) : null}
+
+      {isLaunchOverlayVisible ? (
+        <Animated.View
+          onLayout={handleLaunchOverlayLayout}
+          style={[styles.launchOverlay, { opacity: launchOverlayOpacity }]}>
+          <Image
+            source={require('../assets/images/splash-icon.png')}
+            style={styles.launchLogo}
+            resizeMode="contain"
+          />
+          <ActivityIndicator
+            color="#4F46E5"
+            size="small"
+            style={styles.launchSpinner}
+          />
+        </Animated.View>
+      ) : null}
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+  launchOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  launchLogo: {
+    height: 200,
+    width: 200,
+  },
+  launchSpinner: {
+    marginTop: 132,
+    position: 'absolute',
+    top: '50%',
+  },
+});
