@@ -4,10 +4,11 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Image, StyleSheet, View } from 'react-native';
+import { Animated, Image, StyleSheet, View } from 'react-native';
 import 'react-native-reanimated';
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { Colors } from '@/constants/Colors';
 import { MultiplayerProvider } from '@/context/MultiplayerContext';
 import { QuizSessionProvider } from '@/context/QuizSessionContext';
 import { SettingsProvider } from '@/context/SettingsContext';
@@ -23,6 +24,7 @@ const LAUNCH_OVERLAY_POST_READY_MS = 450;
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const launchBackgroundColor = Colors[colorScheme ?? 'light'].background;
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
@@ -122,16 +124,14 @@ export default function RootLayout() {
       {isLaunchOverlayVisible ? (
         <Animated.View
           onLayout={handleLaunchOverlayLayout}
-          style={[styles.launchOverlay, { opacity: launchOverlayOpacity }]}>
+          style={[
+            styles.launchOverlay,
+            { backgroundColor: launchBackgroundColor, opacity: launchOverlayOpacity },
+          ]}>
           <Image
-            source={require('../assets/images/splash-icon.png')}
+            source={require('../assets/images/qb_transparent.png')}
             style={styles.launchLogo}
             resizeMode="contain"
-          />
-          <ActivityIndicator
-            color="#4F46E5"
-            size="small"
-            style={styles.launchSpinner}
           />
         </Animated.View>
       ) : null}
@@ -146,17 +146,11 @@ const styles = StyleSheet.create({
   launchOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     zIndex: 1000,
   },
   launchLogo: {
-    height: 200,
-    width: 200,
-  },
-  launchSpinner: {
-    marginTop: 132,
-    position: 'absolute',
-    top: '50%',
+    height: 204,
+    width: 240,
   },
 });
