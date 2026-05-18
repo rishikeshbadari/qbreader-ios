@@ -21,6 +21,7 @@ interface DifficultyChipSelectorProps {
   onToggle: (values: number[]) => void;
   onSelectAll?: () => void;
   label: string;
+  disabled?: boolean;
 }
 
 interface CategoryChipSelectorProps {
@@ -30,6 +31,7 @@ interface CategoryChipSelectorProps {
   onToggle: (name: string) => void;
   onSelectAll?: () => void;
   label: string;
+  disabled?: boolean;
 }
 
 type Props = DifficultyChipSelectorProps | CategoryChipSelectorProps;
@@ -43,7 +45,7 @@ export function ChipSelector(props: Props) {
     <View style={styles.container}>
       <View style={styles.header}>
         <ThemedText type="defaultSemiBold" style={styles.label}>{props.label}</ThemedText>
-        {props.onSelectAll && (
+        {props.onSelectAll && !props.disabled && (
           <Pressable onPress={props.onSelectAll} hitSlop={8}>
             <ThemedText style={[styles.selectAll, { color: brandColor }]}>
               Select all
@@ -59,8 +61,10 @@ export function ChipSelector(props: Props) {
                 <Pressable
                   key={option.label}
                   onPress={() => props.onToggle(option.values)}
+                  disabled={props.disabled}
                   accessibilityRole="button"
                   accessibilityLabel={`${option.label}${isSelected ? ', selected' : ''}`}
+                  accessibilityState={{ selected: isSelected, disabled: props.disabled }}
                   style={[
                     styles.chip,
                     { borderColor, backgroundColor: isSelected ? brandColor : 'transparent' },
@@ -77,8 +81,10 @@ export function ChipSelector(props: Props) {
                 <Pressable
                   key={option.name}
                   onPress={() => props.onToggle(option.name)}
+                  disabled={props.disabled}
                   accessibilityRole="button"
                   accessibilityLabel={`${option.name}${isSelected ? ', selected' : ''}`}
+                  accessibilityState={{ selected: isSelected, disabled: props.disabled }}
                   style={[
                     styles.chip,
                     { borderColor, backgroundColor: isSelected ? brandColor : 'transparent' },

@@ -13,7 +13,7 @@ import { ThemedText } from '@/components/ThemedText';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
-import { markStartupTabWarmupComplete } from '@/utils/startupWarmup';
+import { isStartupTabWarmupComplete, markStartupTabWarmupComplete } from '@/utils/startupWarmup';
 
 export const FLOATING_TAB_BAR_HEIGHT = 112;
 
@@ -46,7 +46,7 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
   });
 
   useEffect(() => {
-    if (didWarmTabs.current) {
+    if (didWarmTabs.current || isStartupTabWarmupComplete()) {
       return;
     }
 

@@ -47,8 +47,12 @@ export default function JoinGameScreen() {
     setError(undefined);
 
     try {
-      await joinGame(trimmedCode, name.trim() || 'Player');
-      router.replace({ pathname: '/multiplayer/lobby', params: { code: trimmedCode } });
+      const joinedStatus = await joinGame(trimmedCode, name.trim() || 'Player');
+      if (joinedStatus === 'playing' || joinedStatus === 'paused') {
+        router.replace('/multiplayer/game');
+      } else {
+        router.replace({ pathname: '/multiplayer/lobby', params: { code: trimmedCode } });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to join game.';
       if (message.includes('not found')) {
@@ -97,7 +101,7 @@ export default function JoinGameScreen() {
               style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.6 : 1 }]}>
               <ThemedText style={styles.backLabel}>&#8249; Back</ThemedText>
             </Pressable>
-            <ThemedText type="title">Join a Game</ThemedText>
+            <ThemedText type="title">Join Game</ThemedText>
           </View>
 
           {/* Name input */}

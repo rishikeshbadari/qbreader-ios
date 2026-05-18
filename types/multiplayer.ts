@@ -96,8 +96,17 @@ export type StateSyncPayload = {
   pendingSettings?: GameSettings | null;
   status: SessionStatus;
   currentQuestion?: Tossup;
+  currentResult?: AnswerResult | null;
+  currentBuzzerId?: string | null;
   powerMarkWordIndex?: number;
   revealStartTime?: number | null;
+  revealPausedWordIndex?: number | null;
+  isBuzzLocked?: boolean;
+  buzzWordIndex?: number;
+  buzzTimerEnd?: number | null;
+  buzzerAnswer?: string;
+  buzzerResult?: { answer: string; isCorrect: boolean } | null;
+  promptText?: string | null;
   scores: Record<string, number>;
   lockedOutPlayers: string[];
   buzzQueue?: string[];
@@ -142,4 +151,4 @@ export type GameEvent =
   | { type: 'buzz:timeout'; playerId: string }
   | { type: 'question:timeup'; questionId?: string }
   | { type: 'coordinator:change'; newCoordinatorId: string }
-  | { type: 'state:sync'; state: StateSyncPayload };
+  | { type: 'state:sync'; targetPlayerId?: string; state: StateSyncPayload };

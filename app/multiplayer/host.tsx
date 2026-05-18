@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -101,12 +101,9 @@ export default function HostGameScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.keyboardAvoid}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-    <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+    <View style={styles.keyboardAvoid}>
+      <ThemedView style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Pressable
             onPress={() => router.back()}
@@ -115,7 +112,7 @@ export default function HostGameScreen() {
             style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.6 : 1 }]}>
             <ThemedText style={styles.backLabel}>‹ Back</ThemedText>
           </Pressable>
-          <ThemedText type="title">Start a Game</ThemedText>
+          <ThemedText type="title">Start Game</ThemedText>
         </View>
 
         {/* Name input */}
@@ -218,27 +215,26 @@ export default function HostGameScreen() {
         </View>
 
         {error && <ThemedText style={[styles.error, { color: errorColor }]}>{error}</ThemedText>}
-      </ScrollView>
+        </ScrollView>
 
-      {/* Start button */}
-      <Pressable
-        onPress={handleStart}
-        disabled={isStarting || loadingOptions}
-        accessibilityRole="button"
-        accessibilityLabel="Start hosting game"
-        accessibilityState={{ disabled: isStarting || loadingOptions }}
-        testID="host-start-button"
-        style={({ pressed }) => [
-          styles.button,
-          { marginBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) },
-          { backgroundColor: brandColor, opacity: isStarting || loadingOptions ? 0.5 : pressed ? 0.8 : 1 },
-        ]}>
-        <ThemedText type="defaultSemiBold" style={styles.buttonLabel}>
-          {isStarting ? 'Starting…' : 'Start Game'}
-        </ThemedText>
-      </Pressable>
-    </ThemedView>
-    </KeyboardAvoidingView>
+        <Pressable
+          onPress={handleStart}
+          disabled={isStarting || loadingOptions}
+          accessibilityRole="button"
+          accessibilityLabel="Start hosting game"
+          accessibilityState={{ disabled: isStarting || loadingOptions }}
+          testID="host-start-button"
+          style={({ pressed }) => [
+            styles.button,
+            { marginBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) },
+            { backgroundColor: brandColor, opacity: isStarting || loadingOptions ? 0.5 : pressed ? 0.8 : 1 },
+          ]}>
+          <ThemedText type="defaultSemiBold" style={styles.buttonLabel}>
+            {isStarting ? 'Starting…' : 'Start Game'}
+          </ThemedText>
+        </Pressable>
+      </ThemedView>
+    </View>
   );
 }
 

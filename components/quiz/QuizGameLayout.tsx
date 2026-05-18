@@ -373,7 +373,11 @@ export function QuizGameLayout({
   const mainActionLabel = showNextButton
     ? canGoNext ? 'Next' : 'Waiting for Host'
     : isQueued ? `Queued #${buzzQueuePosition}` : isBuzzLocked && allowBuzzQueue ? 'Join Queue' : 'Buzz';
-  const showMainActionIcon = !showMainActionLabel && (mainActionLabel === 'Buzz' || mainActionLabel === 'Next');
+  const showMainActionIcon = !showMainActionLabel && (
+    mainActionLabel === 'Buzz' ||
+    mainActionLabel === 'Next' ||
+    mainActionLabel === 'Join Queue'
+  );
 
   // Handlers
   const handleWordIndexChange = (index: number) => {
@@ -550,6 +554,9 @@ export function QuizGameLayout({
           <Pressable
             onPress={handleMainAction}
             disabled={mainButtonDisabled}
+            accessibilityRole="button"
+            accessibilityLabel={mainActionLabel}
+            accessibilityState={{ disabled: mainButtonDisabled }}
             style={({ pressed }) => [
               styles.mainButton,
               questionOnly && styles.questionOnlyMainButton,

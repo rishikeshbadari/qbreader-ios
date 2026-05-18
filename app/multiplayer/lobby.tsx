@@ -1,4 +1,4 @@
-import { useRootNavigation, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, FlatList, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,7 +14,6 @@ import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { MAX_PLAYERS, type GameSettings } from '@/types/multiplayer';
-import { resetToMultiplayerHome } from '@/utils/navigation';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 function sortedNumberKey(values: number[]): string {
@@ -46,7 +45,6 @@ function getSelectedDifficultyGroupCount(settings: GameSettings | null, options:
 export default function LobbyScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const rootNavigation = useRootNavigation();
   const {
     gameCode,
     status,
@@ -92,6 +90,7 @@ export default function LobbyScreen() {
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
   const [isTransferringHost, setIsTransferringHost] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [isViewingSettings, setIsViewingSettings] = useState(false);
   const [tempCategories, setTempCategories] = useState<string[]>([]);
   const [tempDifficulties, setTempDifficulties] = useState<number[]>([]);
   const [tempSpeed, setTempSpeed] = useState(0.5);
@@ -111,9 +110,9 @@ export default function LobbyScreen() {
 
   useEffect(() => {
     if (!gameCode && status !== 'ended') {
-      resetToMultiplayerHome(rootNavigation, () => router.replace('/(tabs)/multiplayer'));
+      router.dismissTo('/(tabs)/multiplayer');
     }
-  }, [gameCode, rootNavigation, status, router]);
+  }, [gameCode, status, router]);
 
   // Countdown animation
   const countdownOpacity = useRef(new Animated.Value(1)).current;
@@ -144,15 +143,15 @@ export default function LobbyScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Leave',
-            style: 'destructive',
-            onPress: async () => {
-              await leaveGame();
-              resetToMultiplayerHome(rootNavigation, () => router.replace('/(tabs)/multiplayer'));
-            },
+          style: 'destructive',
+          onPress: async () => {
+            await leaveGame();
+            router.dismissTo('/(tabs)/multiplayer');
           },
+        },
       ],
     );
-  }, [defaultHostCandidateId, hostTransferCandidates.length, isHost, leaveGame, rootNavigation, router]);
+  }, [defaultHostCandidateId, hostTransferCandidates.length, isHost, leaveGame, router]);
 
   const handleConfirmHostTransfer = useCallback(async () => {
     const nextHostId = selectedHostId ?? defaultHostCandidateId;
@@ -163,11 +162,11 @@ export default function LobbyScreen() {
       await transferHost(nextHostId);
       await leaveGame();
       setShowHostTransferModal(false);
-      resetToMultiplayerHome(rootNavigation, () => router.replace('/(tabs)/multiplayer'));
+      router.dismissTo('/(tabs)/multiplayer');
     } finally {
       setIsTransferringHost(false);
     }
-  }, [defaultHostCandidateId, isTransferringHost, leaveGame, rootNavigation, router, selectedHostId, transferHost]);
+  }, [defaultHostCandidateId, isTransferringHost, leaveGame, router, selectedHostId, transferHost]);
 
   const handleKick = useCallback((playerId: string, playerName: string) => {
     Alert.alert(
@@ -191,13 +190,29 @@ export default function LobbyScreen() {
     );
   }, [transferHost]);
 
-  const handleOpenSettings = useCallback(() => {
-    if (!isHost) return;
+  const prepareSettingsModal = useCallback(() => {
     setTempCategories(settings?.categories ?? availableCategories.map(category => category.name));
     setTempDifficulties(settings?.difficulties ?? availableDifficulties.flatMap(difficulty => difficulty.values));
     setTempSpeed(settings?.revealSpeed ?? revealSpeed);
+  }, [availableCategories, availableDifficulties, revealSpeed, settings]);
+
+  const handleOpenSettings = useCallback(() => {
+    if (!isHost) return;
+    prepareSettingsModal();
+    setIsViewingSettings(false);
     setShowSettingsModal(true);
-  }, [availableCategories, availableDifficulties, isHost, revealSpeed, settings]);
+  }, [isHost, prepareSettingsModal]);
+
+  const handleViewSettings = useCallback(() => {
+    prepareSettingsModal();
+    setIsViewingSettings(true);
+    setShowSettingsModal(true);
+  }, [prepareSettingsModal]);
+
+  const handleCloseSettingsModal = useCallback(() => {
+    setShowSettingsModal(false);
+    setIsViewingSettings(false);
+  }, []);
 
   const handleApplySettings = useCallback(async () => {
     const nextSettings: GameSettings = {
@@ -206,10 +221,10 @@ export default function LobbyScreen() {
       revealSpeed: tempSpeed,
     };
 
-    setShowSettingsModal(false);
+    handleCloseSettingsModal();
     if (areSettingsEqual(settings, nextSettings)) return;
     await updateSettings(nextSettings, { lobbyOnly: true });
-  }, [availableCategories, availableDifficulties, settings, tempCategories, tempDifficulties, tempSpeed, updateSettings]);
+  }, [availableCategories, availableDifficulties, handleCloseSettingsModal, settings, tempCategories, tempDifficulties, tempSpeed, updateSettings]);
 
   const toggleDifficulty = useCallback((values: number[]) => {
     setTempDifficulties(current => {
@@ -335,7 +350,19 @@ export default function LobbyScreen() {
                   ]}>
                   <ThemedText style={[styles.editSettingsLabel, { color: brandColor }]}>Edit</ThemedText>
                 </Pressable>
-              ) : null}
+              ) : (
+                <Pressable
+                  onPress={handleViewSettings}
+                  accessibilityRole="button"
+                  accessibilityLabel="View lobby settings"
+                  testID="lobby-settings-view"
+                  style={({ pressed }) => [
+                    styles.editSettingsButton,
+                    { borderColor, opacity: pressed ? 0.7 : 1 },
+                  ]}>
+                  <ThemedText style={[styles.editSettingsLabel, { color: brandColor }]}>View</ThemedText>
+                </Pressable>
+              )}
             </View>
             <View style={styles.settingsRow}>
               <ThemedText style={[styles.settingsLabel, { color: mutedColor }]}>Difficulties</ThemedText>
@@ -420,13 +447,15 @@ export default function LobbyScreen() {
         onConfirm={handleConfirmHostTransfer}
       />
 
-      <Modal visible={showSettingsModal} transparent animationType="slide" onRequestClose={() => setShowSettingsModal(false)}>
+      <Modal visible={showSettingsModal} transparent animationType="slide" onRequestClose={handleCloseSettingsModal}>
         <View style={styles.modalBackdrop}>
           <ThemedView style={[styles.modalCard, { borderColor, paddingBottom: insets.bottom + spacing.lg }]}>
             <View style={styles.modalHeader}>
               <ThemedText type="subtitle">Game Settings</ThemedText>
               <ThemedText style={[styles.modalSubtitle, { color: mutedColor }]}>
-                These settings apply when the game starts.
+                {isViewingSettings
+                  ? 'These are the host’s current lobby settings.'
+                  : 'These settings apply when the game starts.'}
               </ThemedText>
             </View>
 
@@ -437,6 +466,7 @@ export default function LobbyScreen() {
                 selected={tempDifficulties}
                 onToggle={toggleDifficulty}
                 label="Difficulty"
+                disabled={isViewingSettings}
               />
               <ChipSelector
                 kind="category"
@@ -444,6 +474,7 @@ export default function LobbyScreen() {
                 selected={tempCategories}
                 onToggle={toggleCategory}
                 label="Categories"
+                disabled={isViewingSettings}
               />
 
               <View style={styles.modalSection}>
@@ -454,6 +485,7 @@ export default function LobbyScreen() {
                   maximumValue={1}
                   step={0.05}
                   onValueChange={setTempSpeed}
+                  disabled={isViewingSettings}
                   minimumTrackTintColor={brandColor}
                   maximumTrackTintColor={borderColor}
                   thumbTintColor={brandColor}
@@ -463,21 +495,23 @@ export default function LobbyScreen() {
 
             <View style={styles.modalActions}>
               <Pressable
-                onPress={() => setShowSettingsModal(false)}
+                onPress={handleCloseSettingsModal}
                 accessibilityRole="button"
-                accessibilityLabel="Cancel settings"
+                accessibilityLabel={isViewingSettings ? 'Close settings' : 'Cancel settings'}
                 testID="lobby-settings-cancel"
                 style={[styles.secondaryButton, { borderColor }]}>
-                <ThemedText style={{ color: textColor }}>Cancel</ThemedText>
+                <ThemedText style={{ color: textColor }}>{isViewingSettings ? 'Close' : 'Cancel'}</ThemedText>
               </Pressable>
-              <Pressable
-                onPress={() => void handleApplySettings()}
-                accessibilityRole="button"
-                accessibilityLabel="Apply lobby settings"
-                testID="lobby-settings-apply"
-                style={[styles.applyButton, { backgroundColor: brandColor }]}>
-                <ThemedText style={styles.applyLabel}>Apply</ThemedText>
-              </Pressable>
+              {!isViewingSettings ? (
+                <Pressable
+                  onPress={() => void handleApplySettings()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Apply lobby settings"
+                  testID="lobby-settings-apply"
+                  style={[styles.applyButton, { backgroundColor: brandColor }]}>
+                  <ThemedText style={styles.applyLabel}>Apply</ThemedText>
+                </Pressable>
+              ) : null}
             </View>
           </ThemedView>
         </View>

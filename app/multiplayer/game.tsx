@@ -4,6 +4,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   View,
 } from 'react-native';
@@ -47,6 +48,7 @@ export default function MultiplayerGameScreen() {
   const insets = useSafeAreaInsets();
 
   const {
+    gameCode,
     sessionId,
     status,
     players,
@@ -186,6 +188,14 @@ export default function MultiplayerGameScreen() {
     router.replace('/multiplayer/summary');
   };
 
+  const handleShareGameCode = async () => {
+    if (!gameCode) return;
+    const joinUrl = `quizbowl://join/${gameCode}`;
+    await Share.share({
+      message: `Join my QuizBowl game! Code: ${gameCode}\n${joinUrl}`,
+    });
+  };
+
   const handleConfirmHostTransfer = async () => {
     const nextHostId = selectedHostId ?? defaultHostCandidateId;
     if (!nextHostId || isTransferringHost) return;
@@ -247,51 +257,53 @@ export default function MultiplayerGameScreen() {
         showHeader={false}
         topAccessory={
           <View style={[styles.gameHud, { borderColor, backgroundColor: surfaceColor }]}>
-            <View style={styles.hudStats}>
-              <ThemedText style={[styles.hudStat, { color: mutedColor }]}>
-                {players.length} player{players.length !== 1 ? 's' : ''}
-              </ThemedText>
-              <View style={[styles.hudDivider, { backgroundColor: borderColor }]} />
-              <ThemedText
-                type="defaultSemiBold"
-                style={[styles.hudScore, { color: selfScore >= 0 ? successColor : errorColor }]}>
-                {selfScore} pts
-              </ThemedText>
-            </View>
-            <View style={styles.hudActions}>
-              {isHost ? (
-                <Pressable
-                  onPress={handleOpenSettings}
-                  disabled={settingsLockedForActiveBuzz}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    settingsLockedForActiveBuzz
-                      ? 'Game settings locked during active buzz'
-                      : 'Open game settings'
-                  }
-                  testID="game-settings-button"
-                  style={[
-                    styles.hudButton,
-                    { borderColor },
-                    settingsLockedForActiveBuzz && styles.hudButtonDisabled,
-                  ]}>
-                  <ThemedText
+            <View style={styles.hudTopRow}>
+              <View style={styles.hudStats}>
+                <ThemedText style={[styles.hudStat, { color: mutedColor }]}>
+                  {players.length} player{players.length !== 1 ? 's' : ''}
+                </ThemedText>
+                <View style={[styles.hudDivider, { backgroundColor: borderColor }]} />
+                <ThemedText
+                  type="defaultSemiBold"
+                  style={[styles.hudScore, { color: selfScore >= 0 ? successColor : errorColor }]}>
+                  {selfScore} pts
+                </ThemedText>
+              </View>
+              <View style={styles.hudActions}>
+                {isHost ? (
+                  <Pressable
+                    onPress={handleOpenSettings}
+                    disabled={settingsLockedForActiveBuzz}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      settingsLockedForActiveBuzz
+                        ? 'Game settings locked during active buzz'
+                        : 'Open game settings'
+                    }
+                    testID="game-settings-button"
                     style={[
-                      styles.hudButtonText,
-                      { color: settingsLockedForActiveBuzz ? mutedColor : textColor },
+                      styles.hudButton,
+                      { borderColor },
+                      settingsLockedForActiveBuzz && styles.hudButtonDisabled,
                     ]}>
-                    Settings
-                  </ThemedText>
+                    <ThemedText
+                      style={[
+                        styles.hudButtonText,
+                        { color: settingsLockedForActiveBuzz ? mutedColor : textColor },
+                      ]}>
+                      Settings
+                    </ThemedText>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  onPress={handleLeave}
+                  accessibilityRole="button"
+                  accessibilityLabel="Leave game"
+                  testID="game-leave-button"
+                  style={[styles.hudButton, { borderColor }]}>
+                  <ThemedText style={[styles.hudButtonText, { color: textColor }]}>Leave</ThemedText>
                 </Pressable>
-              ) : null}
-              <Pressable
-                onPress={handleLeave}
-                accessibilityRole="button"
-                accessibilityLabel="Leave game"
-                testID="game-leave-button"
-                style={[styles.hudButton, { borderColor }]}>
-                <ThemedText style={[styles.hudButtonText, { color: textColor }]}>Leave</ThemedText>
-              </Pressable>
+              </View>
             </View>
           </View>
         }
@@ -351,12 +363,29 @@ export default function MultiplayerGameScreen() {
       {/* Settings Modal */}
       <Modal visible={showSettings} transparent animationType="slide" onRequestClose={handleCancelSettings}>
         <View style={styles.modalBackdrop}>
-          <ThemedView style={[styles.modalCard, { borderColor }]}>
+          <ThemedView style={[styles.modalCard, { borderColor, paddingBottom: insets.bottom + spacing.lg }]}>
             <View style={styles.modalHeader}>
               <ThemedText type="subtitle">Game Settings</ThemedText>
               <ThemedText style={[styles.modalSubtitle, { color: mutedColor }]}>
                 Game is paused for everyone.
               </ThemedText>
+              {gameCode ? (
+                <Pressable
+                  onPress={handleShareGameCode}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Share game code ${gameCode}`}
+                  testID="game-settings-code"
+                  style={({ pressed }) => [
+                    styles.settingsCodeCard,
+                    { borderColor, opacity: pressed ? 0.7 : 1 },
+                  ]}>
+                  <View>
+                    <ThemedText style={[styles.settingsCodeLabel, { color: mutedColor }]}>Game Code</ThemedText>
+                    <ThemedText type="defaultSemiBold" style={styles.settingsCodeValue}>{gameCode}</ThemedText>
+                  </View>
+                  <ThemedText style={[styles.settingsCodeAction, { color: brandColor }]}>Share</ThemedText>
+                </Pressable>
+              ) : null}
             </View>
 
             <ScrollView contentContainerStyle={styles.modalContent}>
@@ -436,6 +465,8 @@ const styles = StyleSheet.create({
     borderRadius: scale(18),
     paddingHorizontal: spacing.md,
     paddingVertical: verticalScale(10),
+  },
+  hudTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -504,6 +535,29 @@ const styles = StyleSheet.create({
   },
   modalSubtitle: {
     fontSize: responsiveFont(14),
+  },
+  settingsCodeCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(14),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: verticalScale(10),
+  },
+  settingsCodeLabel: {
+    fontSize: responsiveFont(12),
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  settingsCodeValue: {
+    fontSize: responsiveFont(18),
+    letterSpacing: 3,
+  },
+  settingsCodeAction: {
+    fontSize: responsiveFont(14),
+    fontWeight: '700',
   },
   modalContent: {
     gap: spacing.lg,

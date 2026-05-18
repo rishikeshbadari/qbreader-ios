@@ -21,12 +21,12 @@ export default function MultiplayerTab() {
 
   const actions = [
     {
-      title: 'Start a Game',
+      title: 'Start Game',
       href: '/multiplayer/host' as const,
       primary: true,
     },
     {
-      title: 'Join a Game',
+      title: 'Join Game',
       href: '/multiplayer/join' as const,
     },
   ];
