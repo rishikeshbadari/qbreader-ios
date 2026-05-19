@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { InputAccessoryView, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ThemedText';
@@ -20,7 +20,6 @@ export default function JoinGameScreen() {
   const [gameCode, setGameCode] = useState(deepLinkCode?.toUpperCase() ?? '');
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState<string>();
-  const [focusedField, setFocusedField] = useState<'name' | 'code' | null>(null);
 
   const borderColor = useThemeColor({}, 'border');
   const brandColor = useThemeColor({}, 'brand');
@@ -30,7 +29,6 @@ export default function JoinGameScreen() {
   const errorColor = useThemeColor({}, 'error');
 
   const joinDisabled = isJoining || gameCode.length < 6;
-  const shouldShowJoinAccessory = focusedField === 'code' && gameCode.length > 0;
 
   const handleJoin = async () => {
     const trimmedCode = gameCode.trim().toUpperCase();
@@ -74,10 +72,9 @@ export default function JoinGameScreen() {
       accessibilityRole="button"
       accessibilityLabel="Join game"
       accessibilityState={{ disabled: joinDisabled }}
-      testID="join-submit-accessory-button"
+      testID="join-submit-button"
       style={({ pressed }) => [
         styles.button,
-        styles.accessoryButton,
         {
           backgroundColor: brandColor,
           opacity: joinDisabled ? 0.5 : pressed ? 0.8 : 1,
@@ -115,7 +112,6 @@ export default function JoinGameScreen() {
               style={[styles.input, { borderColor, color: textColor, backgroundColor: surfaceColor }]}
               value={name}
               onChangeText={setName}
-              onFocus={() => setFocusedField('name')}
               returnKeyType="next"
               blurOnSubmit={false}
               onSubmitEditing={() => codeInputRef.current?.focus()}
@@ -134,26 +130,16 @@ export default function JoinGameScreen() {
               style={[styles.codeInput, { borderColor, color: textColor, backgroundColor: surfaceColor }]}
               value={gameCode}
               onChangeText={(text) => setGameCode(text.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
-              onFocus={() => setFocusedField('code')}
               autoCapitalize="characters"
               maxLength={6}
-              returnKeyType="go"
-              onSubmitEditing={handleJoin}
+              returnKeyType="done"
+              onSubmitEditing={Keyboard.dismiss}
             />
           </View>
 
           {error && <ThemedText style={[styles.error, { color: errorColor }]}>{error}</ThemedText>}
+          {renderJoinButton()}
         </View>
-
-        {Platform.OS === 'ios' ? (
-          <InputAccessoryView backgroundColor="transparent">
-            {shouldShowJoinAccessory ? (
-              <View style={styles.accessoryContainer}>
-                {renderJoinButton()}
-              </View>
-            ) : null}
-          </InputAccessoryView>
-        ) : null}
       </ThemedView>
     </View>
   );
@@ -216,13 +202,6 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(14),
     alignItems: 'center',
     minHeight: MIN_TOUCH_TARGET,
-  },
-  accessoryContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
-  },
-  accessoryButton: {
     width: '100%',
   },
   buttonLabel: {
