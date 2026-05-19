@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,24 +24,7 @@ const isCompactScreen = deviceMetrics.height < 700;
 const dynamicGap = isCompactScreen ? verticalScale(8) : verticalScale(12);
 const sectionPadding = isCompactScreen ? spacing.md : spacing.lg;
 const chipPaddingV = isCompactScreen ? verticalScale(6) : verticalScale(8);
-
-const CONTACT_LINKS = [
-  {
-    label: 'Gmail',
-    url: 'mailto:badari.rishikesh@gmail.com',
-    icon: require('../../assets/images/gmail-logo.png'),
-  },
-  {
-    label: 'X',
-    url: 'https://x.com/rbadari_',
-    icon: require('../../assets/images/x.png'),
-  },
-  {
-    label: 'LinkedIn',
-    url: 'https://www.linkedin.com/in/rbadari/',
-    icon: require('../../assets/images/linkedin.png'),
-  },
-];
+const CONTACT_EMAIL_URL = 'mailto:badari.rishikesh@gmail.com';
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme();
@@ -71,11 +54,11 @@ export default function SettingsScreen() {
   const { sessionId } = useMultiplayer();
   const [peerActive, setPeerActive] = useState(isPlaytestPeerActive());
 
-  const handleOpenContact = useCallback(async (url: string) => {
+  const handleOpenContact = useCallback(async () => {
     try {
-      await Linking.openURL(url);
+      await Linking.openURL(CONTACT_EMAIL_URL);
     } catch {
-      Alert.alert('Unable to open link', 'Please try again later.');
+      Alert.alert('Unable to open email', 'Please email badari.rishikesh@gmail.com directly.');
     }
   }, []);
 
@@ -176,6 +159,18 @@ export default function SettingsScreen() {
         {/* Header */}
         <View style={styles.header}>
           <ThemedText type="title">Settings</ThemedText>
+          <Pressable
+            onPress={() => void handleOpenContact()}
+            accessibilityRole="button"
+            accessibilityLabel="Contact by email"
+            style={({ pressed }) => [
+              styles.contactButton,
+              { borderColor, opacity: pressed ? 0.7 : 1 },
+            ]}>
+            <ThemedText type="defaultSemiBold" style={styles.contactButtonText}>
+              Contact
+            </ThemedText>
+          </Pressable>
         </View>
 
         {/* Reveal Speed */}
@@ -250,25 +245,6 @@ export default function SettingsScreen() {
           ) : null}
         </ThemedView>
 
-        <ThemedView lightColor={Colors.light.surface} darkColor={Colors.dark.surface} style={[styles.section, styles.contactSection, { borderColor }]}>
-          <ThemedText type="subtitle" style={styles.sectionTitle}>Contact</ThemedText>
-          <View style={styles.contactLinks}>
-            {CONTACT_LINKS.map((contact) => (
-              <Pressable
-                key={contact.label}
-                onPress={() => void handleOpenContact(contact.url)}
-                accessibilityRole="link"
-                accessibilityLabel={`Open ${contact.label}`}
-                style={({ pressed }) => [
-                  styles.contactLink,
-                  { borderColor, opacity: pressed ? 0.7 : 1 },
-                ]}>
-                <Image source={contact.icon} style={styles.contactIcon} resizeMode="contain" />
-              </Pressable>
-            ))}
-          </View>
-        </ThemedView>
-
         {loadingOptions && !showDifficultyPlaceholder && !showCategoryPlaceholder ? (
           <View style={styles.loadingRow}>
             <ActivityIndicator size="small" />
@@ -322,7 +298,9 @@ const styles = StyleSheet.create({
     gap: dynamicGap,
   },
   header: {
-    gap: spacing.xs,
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   section: {
     borderRadius: scale(16),
@@ -362,24 +340,16 @@ const styles = StyleSheet.create({
     fontSize: responsiveFont(14),
     fontWeight: '600',
   },
-  contactSection: {
-    gap: spacing.md,
-  },
-  contactLinks: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  contactLink: {
+  contactButton: {
     alignItems: 'center',
-    borderRadius: scale(12),
-    borderWidth: StyleSheet.hairlineWidth,
-    height: verticalScale(46),
+    borderRadius: 999,
+    borderWidth: scale(1),
     justifyContent: 'center',
-    width: verticalScale(46),
+    paddingHorizontal: spacing.md,
+    paddingVertical: verticalScale(7),
   },
-  contactIcon: {
-    height: scale(24),
-    width: scale(24),
+  contactButtonText: {
+    fontSize: responsiveFont(13),
   },
   loadingRow: {
     flexDirection: 'row',

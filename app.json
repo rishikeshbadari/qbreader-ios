@@ -8,33 +8,15 @@
     "scheme": "quizbowl",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/qb_transparent.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F4F5FB",
-      "dark": {
-        "image": "./assets/images/qb_transparent.png",
-        "backgroundColor": "#030712"
-      }
-    },
     "ios": {
       "icon": "./assets/images/icon.png",
-      "splash": {
-        "image": "./assets/images/qb_transparent.png",
-        "resizeMode": "contain",
-        "backgroundColor": "#F4F5FB",
-        "dark": {
-          "image": "./assets/images/qb_transparent.png",
-          "backgroundColor": "#030712"
-        }
-      },
       "supportsTablet": true,
       "bundleIdentifier": "com.rbadari.quizbowl"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0F172A"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.rbadari.quizbowl"
@@ -49,22 +31,22 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/qb_transparent.png",
+          "image": "./assets/images/splash-logo-v2.png",
           "imageWidth": 240,
           "resizeMode": "contain",
-          "backgroundColor": "#F4F5FB",
+          "backgroundColor": "#0F172A",
           "dark": {
-            "image": "./assets/images/qb_transparent.png",
-            "backgroundColor": "#030712"
+            "image": "./assets/images/splash-logo-v2.png",
+            "backgroundColor": "#0F172A"
           },
           "ios": {
-            "image": "./assets/images/qb_transparent.png",
+            "image": "./assets/images/splash-logo-v2.png",
             "imageWidth": 240,
             "resizeMode": "contain",
-            "backgroundColor": "#F4F5FB",
+            "backgroundColor": "#0F172A",
             "dark": {
-              "image": "./assets/images/qb_transparent.png",
-              "backgroundColor": "#030712"
+              "image": "./assets/images/splash-logo-v2.png",
+              "backgroundColor": "#0F172A"
             }
           }
         }

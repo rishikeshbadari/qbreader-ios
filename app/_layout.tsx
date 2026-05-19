@@ -8,7 +8,6 @@ import { Animated, Image, StyleSheet, View } from 'react-native';
 import 'react-native-reanimated';
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { Colors } from '@/constants/Colors';
 import { MultiplayerProvider } from '@/context/MultiplayerContext';
 import { QuizSessionProvider } from '@/context/QuizSessionContext';
 import { SettingsProvider } from '@/context/SettingsContext';
@@ -21,10 +20,10 @@ import {
 SplashScreen.preventAutoHideAsync();
 
 const LAUNCH_OVERLAY_POST_READY_MS = 450;
+const SPLASH_BACKGROUND_COLOR = '#0F172A';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
-  const launchBackgroundColor = Colors[colorScheme ?? 'light'].background;
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
@@ -126,10 +125,10 @@ export default function RootLayout() {
           onLayout={handleLaunchOverlayLayout}
           style={[
             styles.launchOverlay,
-            { backgroundColor: launchBackgroundColor, opacity: launchOverlayOpacity },
+            { backgroundColor: SPLASH_BACKGROUND_COLOR, opacity: launchOverlayOpacity },
           ]}>
           <Image
-            source={require('../assets/images/qb_transparent.png')}
+            source={require('../assets/images/splash-logo-v2.png')}
             style={styles.launchLogo}
             resizeMode="contain"
           />
@@ -150,7 +149,7 @@ const styles = StyleSheet.create({
     zIndex: 1000,
   },
   launchLogo: {
-    height: 204,
+    height: 240,
     width: 240,
   },
 });

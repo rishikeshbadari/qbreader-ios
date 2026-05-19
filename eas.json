@@ -12,6 +12,9 @@
       "distribution": "internal"
     },
     "production": {
+      "ios": {
+        "distribution": "store"
+      },
       "autoIncrement": true
     }
   },
