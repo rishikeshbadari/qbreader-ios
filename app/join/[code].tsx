@@ -7,7 +7,7 @@ import { useThemeColor } from '@/hooks/useThemeColor';
 import { resetToMultiplayerHome } from '@/utils/navigation';
 
 /**
- * Deep link handler: quizbowl://join/{CODE}
+ * Deep link handler: qbreader://join/{CODE}
  *
  * Extracts the game code from the URL and redirects to the join screen
  * with the code pre-filled.

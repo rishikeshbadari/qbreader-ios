@@ -1,4 +1,4 @@
-# QuizBowl
+# QBReader
 
 A lightweight iOS-first quizbowl app inspired by and powered by [QB Reader](https://www.qbreader.org/) and the open-source [qbreader/website](https://github.com/qbreader/website).
 

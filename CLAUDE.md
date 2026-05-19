@@ -1,4 +1,4 @@
-# QuizBowl — Claude Code Notes
+# QBReader — Claude Code Notes
 
 Expo / React Native quiz app. Single-player tossups from QBReader API + multiplayer via Supabase Realtime Broadcast (with a `LoopbackTransport` for in-process testing).
 

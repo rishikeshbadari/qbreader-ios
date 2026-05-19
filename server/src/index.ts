@@ -243,5 +243,5 @@ function handleMessage(ws: WebSocket, msg: ClientMessage): void {
 // ─── Start Server ────────────────────────────────────────────────────────────
 
 httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`QuizBowl relay server running on 0.0.0.0:${PORT}`);
+  console.log(`QBReader relay server running on 0.0.0.0:${PORT}`);
 });

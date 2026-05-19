@@ -190,9 +190,9 @@ export default function MultiplayerGameScreen() {
 
   const handleShareGameCode = async () => {
     if (!gameCode) return;
-    const joinUrl = `quizbowl://join/${gameCode}`;
+    const joinUrl = `qbreader://join/${gameCode}`;
     await Share.share({
-      message: `Join my QuizBowl game! Code: ${gameCode}\n${joinUrl}`,
+      message: `Join my QBReader game! Code: ${gameCode}\n${joinUrl}`,
     });
   };
 

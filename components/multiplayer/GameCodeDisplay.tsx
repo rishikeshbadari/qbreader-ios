@@ -22,9 +22,9 @@ export function GameCodeDisplay({ code }: GameCodeDisplayProps) {
 
   const handleShare = async () => {
     if (!code) return;
-    const joinUrl = `quizbowl://join/${code}`;
+    const joinUrl = `qbreader://join/${code}`;
     await Share.share({
-      message: `Join my QuizBowl game! Code: ${code}\n${joinUrl}`,
+      message: `Join my QBReader game! Code: ${code}\n${joinUrl}`,
     });
   };
 

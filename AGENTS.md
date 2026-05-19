@@ -1,4 +1,4 @@
-# QuizBowl — Codex Notes
+# QBReader — Codex Notes
 
 Expo / React Native quiz app. Single-player tossups from QBReader API + multiplayer via Supabase Realtime Broadcast (with a `LoopbackTransport` for in-process testing).
 
