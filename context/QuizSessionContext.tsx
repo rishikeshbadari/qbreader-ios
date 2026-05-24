@@ -17,6 +17,7 @@ import type { AnswerResult, SessionHistoryEntry, Tossup } from '@/types/qb';
 const MAX_HISTORY_ENTRIES = 200;
 const PREFETCH_TARGET = 10;
 const PREFETCH_LOW_WATER = 3;
+const SETTINGS_PREFETCH_DEBOUNCE_MS = 300;
 
 interface QuizSessionContextValue {
   currentQuestion?: Tossup;
@@ -42,9 +43,14 @@ const QuizSessionContext = createContext<QuizSessionContextValue | undefined>(
  */
 export function QuizSessionProvider({ children }: PropsWithChildren) {
   const abortRef = useRef<AbortController | null>(null);
-  const prefetchAbortRef = useRef<AbortController | null>(null);
-  const prefetchKeyRef = useRef<string | null>(null);
-  const prefetchPromiseRef = useRef<Promise<void> | null>(null);
+  const fastPrefetchAbortRef = useRef<AbortController | null>(null);
+  const fastPrefetchKeyRef = useRef<string | null>(null);
+  const fastPrefetchPromiseRef = useRef<Promise<void> | null>(null);
+  const batchPrefetchAbortRef = useRef<AbortController | null>(null);
+  const batchPrefetchKeyRef = useRef<string | null>(null);
+  const batchPrefetchPromiseRef = useRef<Promise<void> | null>(null);
+  const settingsPrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasStartedInitialPrefetchRef = useRef(false);
   const [currentQuestion, setCurrentQuestion] = useState<Tossup>();
   const [nextQuestions, setNextQuestions] = useState<Tossup[]>([]);
   const [loadingQuestion, setLoadingQuestion] = useState(false);
@@ -69,6 +75,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
   }, [selectedCategories, selectedDifficulties]);
 
   const nextQuestionsRef = useRef<Tossup[]>([]);
+  const seenQuestionIdsRef = useRef<Set<string>>(new Set());
 
   const buildFiltersKey = useCallback((filters: ReturnType<typeof buildFilters>) => {
     const difficulties = filters.difficulties ? [...filters.difficulties].sort((a, b) => a - b) : [];
@@ -76,33 +83,135 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     return `${difficulties.join(',')}|${categories.join(',')}`;
   }, []);
 
-  /**
-   * Preload additional tossups into a queue to keep gameplay responsive while
-   * staying comfortably under the QBReader rate limit.
-   */
-  const ensurePrefetched = useCallback(async (force = false) => {
+  const isLatestFiltersKey = useCallback((key: string) => {
+    return buildFiltersKey(buildFilters()) === key;
+  }, [buildFilters, buildFiltersKey]);
+
+  const enqueueQuestions = useCallback((incoming: Tossup[], key: string) => {
+    if (!isLatestFiltersKey(key)) {
+      return [];
+    }
+
+    const uniqueQuestions: Tossup[] = [];
+    for (const question of incoming) {
+      if (seenQuestionIdsRef.current.has(question.id)) {
+        continue;
+      }
+      seenQuestionIdsRef.current.add(question.id);
+      uniqueQuestions.push(question);
+    }
+
+    if (uniqueQuestions.length === 0) {
+      return [];
+    }
+
+    const merged = [...nextQuestionsRef.current, ...uniqueQuestions];
+    nextQuestionsRef.current = merged;
+    setNextQuestions(merged);
+    return uniqueQuestions;
+  }, [isLatestFiltersKey]);
+
+  const popQueuedQuestion = useCallback(() => {
+    const [next, ...rest] = nextQuestionsRef.current;
+    if (!next) {
+      return undefined;
+    }
+
+    nextQuestionsRef.current = rest;
+    setNextQuestions(rest);
+    return next;
+  }, []);
+
+  const showQuestion = useCallback((question: Tossup) => {
+    seenQuestionIdsRef.current.add(question.id);
+    setCurrentQuestion(question);
+  }, []);
+
+  const abortFastPrefetch = useCallback(() => {
+    fastPrefetchAbortRef.current?.abort();
+    fastPrefetchAbortRef.current = null;
+    fastPrefetchKeyRef.current = null;
+    fastPrefetchPromiseRef.current = null;
+  }, []);
+
+  const abortBatchPrefetch = useCallback(() => {
+    batchPrefetchAbortRef.current?.abort();
+    batchPrefetchAbortRef.current = null;
+    batchPrefetchKeyRef.current = null;
+    batchPrefetchPromiseRef.current = null;
+  }, []);
+
+  const startFastPrefetch = useCallback((force = false) => {
     const filters = buildFilters();
     const key = buildFiltersKey(filters);
 
+    if (!force && nextQuestionsRef.current.length > 0) {
+      return fastPrefetchPromiseRef.current ?? Promise.resolve();
+    }
+
+    if (fastPrefetchKeyRef.current === key && fastPrefetchPromiseRef.current) {
+      return fastPrefetchPromiseRef.current;
+    }
+
+    if (force || fastPrefetchKeyRef.current !== key) {
+      abortFastPrefetch();
+    }
+
+    const controller = new AbortController();
+    fastPrefetchAbortRef.current = controller;
+    fastPrefetchKeyRef.current = key;
+
+    const promise = (async () => {
+      try {
+        const incoming = await fetchRandomTossups(1, controller.signal, filters);
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        enqueueQuestions(incoming, key);
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') {
+          return;
+        }
+        console.error('Failed to prefetch fast tossup', err);
+      } finally {
+        if (fastPrefetchAbortRef.current === controller) {
+          fastPrefetchAbortRef.current = null;
+          fastPrefetchKeyRef.current = null;
+          fastPrefetchPromiseRef.current = null;
+        }
+      }
+    })();
+
+    fastPrefetchPromiseRef.current = promise;
+    return promise;
+  }, [abortFastPrefetch, buildFilters, buildFiltersKey, enqueueQuestions]);
+
+  const startBatchPrefetch = useCallback((force = false) => {
+    const filters = buildFilters();
+    const key = buildFiltersKey(filters);
     const currentLength = nextQuestionsRef.current.length;
+
     if (!force && currentLength > PREFETCH_LOW_WATER) {
-      return;
+      return batchPrefetchPromiseRef.current ?? Promise.resolve();
     }
 
     const needed = PREFETCH_TARGET - currentLength;
     if (needed <= 0) {
-      return;
+      return batchPrefetchPromiseRef.current ?? Promise.resolve();
     }
 
-    // Reuse in-flight prefetch if it matches the same filter key.
-    if (prefetchKeyRef.current === key && prefetchPromiseRef.current) {
-      return prefetchPromiseRef.current;
+    if (batchPrefetchKeyRef.current === key && batchPrefetchPromiseRef.current) {
+      return batchPrefetchPromiseRef.current;
     }
 
-    prefetchAbortRef.current?.abort();
+    if (force || batchPrefetchKeyRef.current !== key) {
+      abortBatchPrefetch();
+    }
+
     const controller = new AbortController();
-    prefetchAbortRef.current = controller;
-    prefetchKeyRef.current = key;
+    batchPrefetchAbortRef.current = controller;
+    batchPrefetchKeyRef.current = key;
 
     const promise = (async () => {
       try {
@@ -111,45 +220,101 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
           return;
         }
 
-        // Filters may have changed while the request was in flight; drop results if so.
-        const latestKey = buildFiltersKey(buildFilters());
-        if (latestKey !== key) {
-          return;
+        const queued = enqueueQuestions(incoming, key);
+        if (queued.length > 0 && fastPrefetchKeyRef.current === key) {
+          abortFastPrefetch();
         }
-
-        const merged = [...nextQuestionsRef.current, ...incoming];
-        nextQuestionsRef.current = merged;
-        setNextQuestions(merged);
       } catch (err) {
         if ((err as Error).name === 'AbortError') {
           return;
         }
-        console.error('Failed to prefetch tossup', err);
+        console.error('Failed to prefetch tossups', err);
       } finally {
-        if (prefetchKeyRef.current === key) {
-          prefetchPromiseRef.current = null;
+        if (batchPrefetchAbortRef.current === controller) {
+          batchPrefetchAbortRef.current = null;
+          batchPrefetchKeyRef.current = null;
+          batchPrefetchPromiseRef.current = null;
         }
       }
     })();
 
-    prefetchPromiseRef.current = promise;
+    batchPrefetchPromiseRef.current = promise;
     return promise;
-  }, [buildFilters, buildFiltersKey]);
+  }, [abortBatchPrefetch, abortFastPrefetch, buildFilters, buildFiltersKey, enqueueQuestions]);
+
+  const ensurePrefetched = useCallback((force = false) => {
+    const key = buildFiltersKey(buildFilters());
+    const hasBatchInFlight = batchPrefetchKeyRef.current === key && Boolean(batchPrefetchPromiseRef.current);
+
+    if (force || (nextQuestionsRef.current.length === 0 && !hasBatchInFlight)) {
+      void startFastPrefetch(force);
+    }
+
+    void startBatchPrefetch(force);
+  }, [buildFilters, buildFiltersKey, startBatchPrefetch, startFastPrefetch]);
+
+  const waitForPrefetchedQuestion = useCallback(async (key: string, signal: AbortSignal) => {
+    while (!signal.aborted) {
+      const queuedQuestion = popQueuedQuestion();
+      if (queuedQuestion) {
+        return queuedQuestion;
+      }
+
+      const pendingPromises: Promise<void>[] = [];
+      if (fastPrefetchKeyRef.current === key && fastPrefetchPromiseRef.current) {
+        pendingPromises.push(fastPrefetchPromiseRef.current);
+      }
+      if (batchPrefetchKeyRef.current === key && batchPrefetchPromiseRef.current) {
+        pendingPromises.push(batchPrefetchPromiseRef.current);
+      }
+
+      if (pendingPromises.length === 0) {
+        return undefined;
+      }
+
+      await Promise.race(pendingPromises.map((promise) => promise.catch(() => undefined)));
+    }
+
+    return undefined;
+  }, [popQueuedQuestion]);
 
   useEffect(() => {
-    void ensurePrefetched(true);
+    abortRef.current?.abort();
+    abortFastPrefetch();
+    abortBatchPrefetch();
+
+    if (settingsPrefetchTimerRef.current) {
+      clearTimeout(settingsPrefetchTimerRef.current);
+      settingsPrefetchTimerRef.current = null;
+    }
+
+    setCurrentQuestion(undefined);
+    setLastResult(undefined);
+    setLastAnswer(undefined);
+    setPromptInfo(null);
+    promptedRef.current = false;
+    nextQuestionsRef.current = [];
+    setNextQuestions([]);
+
+    const startWarmup = () => {
+      settingsPrefetchTimerRef.current = null;
+      hasStartedInitialPrefetchRef.current = true;
+      ensurePrefetched(true);
+    };
+
+    if (hasStartedInitialPrefetchRef.current) {
+      settingsPrefetchTimerRef.current = setTimeout(startWarmup, SETTINGS_PREFETCH_DEBOUNCE_MS);
+    } else {
+      startWarmup();
+    }
 
     return () => {
-      prefetchAbortRef.current?.abort();
+      if (settingsPrefetchTimerRef.current) {
+        clearTimeout(settingsPrefetchTimerRef.current);
+        settingsPrefetchTimerRef.current = null;
+      }
     };
-  }, [ensurePrefetched]);
-
-  useEffect(() => {
-    setNextQuestions([]);
-    setCurrentQuestion(undefined);
-    nextQuestionsRef.current = [];
-    void ensurePrefetched(true);
-  }, [selectedCategories, selectedDifficulties, ensurePrefetched]);
+  }, [abortBatchPrefetch, abortFastPrefetch, ensurePrefetched, selectedCategories, selectedDifficulties]);
 
   /**
    * Pop the next queued tossup (or fetch one) and update current state.
@@ -166,57 +331,38 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     setPromptInfo(null);
     promptedRef.current = false;
 
-    let queuedQuestions = nextQuestionsRef.current;
-    if (queuedQuestions.length > 0) {
-      const [next, ...rest] = queuedQuestions;
-      nextQuestionsRef.current = rest;
-      setCurrentQuestion(next);
-      setNextQuestions(rest);
+    const filters = buildFilters();
+    const currentFiltersKey = buildFiltersKey(filters);
+    let nextQuestion = popQueuedQuestion();
+    if (nextQuestion) {
+      showQuestion(nextQuestion);
       setLoadingQuestion(false);
-      void ensurePrefetched();
+      ensurePrefetched();
       return;
     }
 
-    // If we're already prefetching for the same filters, wait for it rather than
-    // aborting and starting a redundant request.
-    const currentFiltersKey = buildFiltersKey(buildFilters());
-    if (prefetchKeyRef.current === currentFiltersKey && prefetchPromiseRef.current) {
-      try {
-        await prefetchPromiseRef.current;
-      } catch {
-        // ignore; failures are already logged in ensurePrefetched
-      }
-      queuedQuestions = nextQuestionsRef.current;
-      if (queuedQuestions.length > 0) {
-        const [next, ...rest] = queuedQuestions;
-        nextQuestionsRef.current = rest;
-        setCurrentQuestion(next);
-        setNextQuestions(rest);
-        setLoadingQuestion(false);
-        void ensurePrefetched();
+    void startFastPrefetch();
+    void startBatchPrefetch();
+    try {
+      nextQuestion = await waitForPrefetchedQuestion(currentFiltersKey, abortController.signal);
+      if (abortController.signal.aborted) {
         return;
       }
-    }
 
-    // Any remaining in-flight prefetch is now redundant (different filters or failed),
-    // so abort it to save bandwidth before doing an on-demand batch fetch.
-    if (prefetchKeyRef.current && prefetchKeyRef.current !== currentFiltersKey) {
-      prefetchAbortRef.current?.abort();
-      prefetchKeyRef.current = null;
-      prefetchPromiseRef.current = null;
-    }
+      if (nextQuestion) {
+        showQuestion(nextQuestion);
+        setLoadingQuestion(false);
+        ensurePrefetched();
+        return;
+      }
 
-    try {
-      const tossups = await fetchRandomTossups(
-        PREFETCH_TARGET,
-        abortController.signal,
-        buildFilters()
-      );
-      const [first, ...rest] = tossups;
-      nextQuestionsRef.current = rest;
-      setCurrentQuestion(first);
-      setNextQuestions(rest);
-      void ensurePrefetched();
+      const [first] = await fetchRandomTossups(1, abortController.signal, filters);
+      if (abortController.signal.aborted || !isLatestFiltersKey(currentFiltersKey)) {
+        return;
+      }
+
+      showQuestion(first);
+      void startBatchPrefetch(true);
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
         return;
@@ -231,7 +377,17 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
     } finally {
       setLoadingQuestion(false);
     }
-  }, [buildFilters, buildFiltersKey, ensurePrefetched]);
+  }, [
+    buildFilters,
+    buildFiltersKey,
+    ensurePrefetched,
+    isLatestFiltersKey,
+    popQueuedQuestion,
+    showQuestion,
+    startBatchPrefetch,
+    startFastPrefetch,
+    waitForPrefetchedQuestion,
+  ]);
 
   /**
    * Judge a user's answer against the current tossup and append to history.
@@ -352,9 +508,13 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
   useEffect(
     () => () => {
       abortRef.current?.abort();
-      prefetchAbortRef.current?.abort();
+      abortFastPrefetch();
+      abortBatchPrefetch();
+      if (settingsPrefetchTimerRef.current) {
+        clearTimeout(settingsPrefetchTimerRef.current);
+      }
     },
-    []
+    [abortBatchPrefetch, abortFastPrefetch]
   );
 
   return (

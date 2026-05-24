@@ -112,6 +112,9 @@ type MultiplayerContextValue = {
   buzzQueuePosition: number | null;
   pausedByPlayerId: string | null;
   pausedByName: string | null;
+  reviewSecondsRemaining: number | null;
+  reviewPausedByPlayerId: string | null;
+  reviewPausedByName: string | null;
   readyPlayers: string[];
   connectionStatuses: Record<string, 'connected' | 'reconnecting' | 'disconnected'>;
   countdownSeconds: number | null;
@@ -128,6 +131,8 @@ type MultiplayerContextValue = {
   noBuzzTimeout: (questionId?: string) => Promise<void>;
   pauseGame: () => Promise<void>;
   resumeGame: () => Promise<void>;
+  pauseReview: () => Promise<void>;
+  resumeReview: () => Promise<void>;
   updateSettings: (settings: GameSettings, options?: { deferUntilNextQuestion?: boolean; lobbyOnly?: boolean }) => Promise<void>;
   endGame: () => Promise<void>;
   leaveGame: () => Promise<void>;
@@ -146,6 +151,7 @@ const CLOCK_SYNC_MAX_RTT_MS = 1500;
 const CLOCK_SYNC_SMOOTHING = 0.25;
 const REVEAL_START_LEAD_MS = 250;
 const JOIN_SYNC_WAIT_MS = 2500;
+const REVIEW_COUNTDOWN_MS = SCORING.REVIEW_SECONDS * 1000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider
@@ -210,6 +216,12 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   // Pause state: tracks which player paused to change settings
   const [pausedByName, setPausedByName] = useState<string | null>(null);
   const [pausedByPlayerId, setPausedByPlayerId] = useState<string | null>(null);
+  const [reviewSecondsRemaining, setReviewSecondsRemaining] = useState<number | null>(null);
+  const [reviewPausedByPlayerId, setReviewPausedByPlayerId] = useState<string | null>(null);
+  const [reviewPausedByName, setReviewPausedByName] = useState<string | null>(null);
+  const reviewTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reviewNextQuestionAtRef = useRef<number | null>(null);
+  const reviewRemainingMsRef = useRef<number | null>(null);
 
   // Ready system state
   const [readyPlayers, setReadyPlayers] = useState<string[]>([]);
@@ -225,6 +237,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const prefetchedRef = useRef<{ tossup: Tossup; pmIndex?: number; settingsKey: string } | null>(null);
   const prefetchAbortRef = useRef<AbortController | null>(null);
   const prefetchInFlightKeyRef = useRef<string | null>(null);
+  const prefetchInFlightPromiseRef = useRef<Promise<void> | null>(null);
+  const isLeavingSessionRef = useRef(false);
   const joinSyncResolverRef = useRef<{
     playerId: string;
     resolve: (status: SessionStatus) => void;
@@ -264,12 +278,14 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     lockedOutPlayers, summary, hostId, scores, powerMarkWordIndex,
     status, sessionId, allPlayers, buzzWordIndex, gameCode, readyPlayers, revealStartTime,
     isBuzzLocked, buzzQueue, buzzTimerEnd, buzzerAnswer, buzzerResult, promptText,
+    reviewSecondsRemaining, reviewPausedByPlayerId, reviewPausedByName,
   });
   stateRef.current = {
     players, settings, pendingSettings, currentQuestion, currentResult, currentBuzzer, selfPlayer,
     lockedOutPlayers, summary, hostId, scores, powerMarkWordIndex,
     status, sessionId, allPlayers, buzzWordIndex, gameCode, readyPlayers, revealStartTime,
     isBuzzLocked, buzzQueue, buzzTimerEnd, buzzerAnswer, buzzerResult, promptText,
+    reviewSecondsRemaining, reviewPausedByPlayerId, reviewPausedByName,
   };
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -352,6 +368,18 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setCountdownSeconds(null);
   }, []);
 
+  const clearReviewCountdown = useCallback(() => {
+    if (reviewTimerRef.current) {
+      clearInterval(reviewTimerRef.current);
+      reviewTimerRef.current = null;
+    }
+    reviewNextQuestionAtRef.current = null;
+    reviewRemainingMsRef.current = null;
+    setReviewSecondsRemaining(null);
+    setReviewPausedByPlayerId(null);
+    setReviewPausedByName(null);
+  }, []);
+
   const clearPendingTyping = useCallback(() => {
     if (pendingTypingTimerRef.current) {
       clearTimeout(pendingTypingTimerRef.current);
@@ -370,6 +398,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     }
     prefetchedRef.current = null;
     prefetchInFlightKeyRef.current = null;
+    prefetchInFlightPromiseRef.current = null;
     preloadedQuestionRef.current = null;
     if (clockSyncIntervalRef.current) {
       clearInterval(clockSyncIntervalRef.current);
@@ -385,6 +414,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       buzzTimerRef.current = null;
     }
     clearCountdownTimer();
+    clearReviewCountdown();
     clearWrongAnswerTimer();
     setSessionId(null);
     setGameCode(null);
@@ -425,7 +455,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setPausedByName(null);
     setReadyPlayers([]);
     setConnectionStatuses({});
-  }, [clearCountdownTimer, clearPendingTyping, clearWrongAnswerTimer]);
+    isLeavingSessionRef.current = false;
+  }, [clearCountdownTimer, clearPendingTyping, clearReviewCountdown, clearWrongAnswerTimer]);
 
   const addQuestionToSummary = useCallback((tossup: Tossup, pmIndex?: number) => {
     setSummary(prev => {
@@ -740,7 +771,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     prefetchAbortRef.current = controller;
     prefetchInFlightKeyRef.current = settingsKey;
 
-    fetchRandomTossup(controller.signal, {
+    const prefetchPromise = fetchRandomTossup(controller.signal, {
       difficulties: questionSettings.difficulties,
       categories: questionSettings.categories,
     }).then(tossup => {
@@ -764,8 +795,17 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       if (prefetchInFlightKeyRef.current === settingsKey) {
         prefetchInFlightKeyRef.current = null;
       }
+      if (prefetchInFlightPromiseRef.current === prefetchPromise) {
+        prefetchInFlightPromiseRef.current = null;
+      }
     });
+    prefetchInFlightPromiseRef.current = prefetchPromise;
   }, [send]);
+
+  useEffect(() => {
+    if (status !== 'lobby' || !settings || !isCoordinatorValue) return;
+    prefetchAndDistribute();
+  }, [isCoordinatorValue, players.length, prefetchAndDistribute, settings, status]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Question/Answer Logic
@@ -796,6 +836,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     clearBuzzQueue();
     setPromptText(null);
     promptedPlayerRef.current = null;
+    clearReviewCountdown();
     revealPausedAtRef.current = null;
     revealPausedWordIndexRef.current = null;
     currentRevealWordIndexRef.current = null;
@@ -816,7 +857,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     // Start pre-fetching the NEXT question for all devices
     prefetchAndDistribute();
     return true;
-  }, [send, addQuestionToSummary, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, coordinatorTimeToLocal, getNextRevealStartTime, prefetchAndDistribute]);
+  }, [send, addQuestionToSummary, clearBuzzTimer, clearBuzzQueue, clearReviewCountdown, clearWrongAnswerTimer, coordinatorTimeToLocal, getNextRevealStartTime, prefetchAndDistribute]);
 
   /**
    * Fallback: fetch a question on-demand and broadcast with question:new.
@@ -825,13 +866,25 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const fetchAndBroadcastQuestion = useCallback(async () => {
     const questionSettings = applyPendingSettingsForNextQuestion();
     if (!questionSettings) return;
+    const settingsKey = buildSettingsKey(questionSettings);
 
     // Try the preloaded path first (zero latency)
     if (revealPreloadedQuestion(questionSettings)) return;
 
+    if (
+      prefetchInFlightKeyRef.current === settingsKey &&
+      prefetchInFlightPromiseRef.current
+    ) {
+      setIsLoading(true);
+      await prefetchInFlightPromiseRef.current;
+      if (revealPreloadedQuestion(questionSettings)) return;
+    }
+
     // Fallback: fetch now
     fetchAbortRef.current?.abort();
     prefetchAbortRef.current?.abort();
+    prefetchInFlightKeyRef.current = null;
+    prefetchInFlightPromiseRef.current = null;
 
     setIsLoading(true);
     setCurrentResult(null);
@@ -843,6 +896,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     clearBuzzQueue();
     setPromptText(null);
     promptedPlayerRef.current = null;
+    clearReviewCountdown();
     revealPausedAtRef.current = null;
     revealPausedWordIndexRef.current = null;
     currentRevealWordIndexRef.current = null;
@@ -880,7 +934,99 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
 
     // Pre-fetch + distribute next question to all devices
     prefetchAndDistribute();
-  }, [send, addQuestionToSummary, applyPendingSettingsForNextQuestion, clearBuzzTimer, clearBuzzQueue, clearWrongAnswerTimer, coordinatorTimeToLocal, getNextRevealStartTime, prefetchAndDistribute, revealPreloadedQuestion]);
+  }, [send, addQuestionToSummary, applyPendingSettingsForNextQuestion, clearBuzzTimer, clearBuzzQueue, clearReviewCountdown, clearWrongAnswerTimer, coordinatorTimeToLocal, getNextRevealStartTime, prefetchAndDistribute, revealPreloadedQuestion]);
+
+  const applyReviewStart = useCallback((nextQuestionAt: number) => {
+    if (reviewTimerRef.current) {
+      clearInterval(reviewTimerRef.current);
+      reviewTimerRef.current = null;
+    }
+
+    const localNextQuestionAt = coordinatorTimeToLocal(nextQuestionAt);
+    reviewNextQuestionAtRef.current = localNextQuestionAt;
+    reviewRemainingMsRef.current = null;
+    setReviewPausedByPlayerId(null);
+    setReviewPausedByName(null);
+
+    const updateReviewCountdown = () => {
+      const remainingMs = Math.max(0, localNextQuestionAt - Date.now());
+      setReviewSecondsRemaining(Math.ceil(remainingMs / 1000));
+
+      if (remainingMs > 0) {
+        return;
+      }
+
+      if (reviewTimerRef.current) {
+        clearInterval(reviewTimerRef.current);
+        reviewTimerRef.current = null;
+      }
+      reviewNextQuestionAtRef.current = null;
+      setReviewSecondsRemaining(null);
+
+      if (
+        isCoordinatorFn() &&
+        stateRef.current.status === 'playing' &&
+        stateRef.current.currentResult &&
+        stateRef.current.currentQuestion
+      ) {
+        void fetchAndBroadcastQuestion();
+      }
+    };
+
+    updateReviewCountdown();
+    reviewTimerRef.current = setInterval(updateReviewCountdown, 250);
+  }, [coordinatorTimeToLocal, fetchAndBroadcastQuestion, isCoordinatorFn]);
+
+  const startReviewCountdown = useCallback(() => {
+    if (!isCoordinatorFn()) return;
+    const nextQuestionAt = getCoordinatorNow() + REVIEW_COUNTDOWN_MS;
+    applyReviewStart(nextQuestionAt);
+    void send({ type: 'question:review_start', nextQuestionAt });
+  }, [applyReviewStart, getCoordinatorNow, isCoordinatorFn, send]);
+
+  const applyReviewPause = useCallback((playerId: string | undefined, playerName: string | undefined, remainingMs: number) => {
+    if (reviewTimerRef.current) {
+      clearInterval(reviewTimerRef.current);
+      reviewTimerRef.current = null;
+    }
+    reviewNextQuestionAtRef.current = null;
+    reviewRemainingMsRef.current = Math.max(0, remainingMs);
+    setReviewSecondsRemaining(Math.ceil(reviewRemainingMsRef.current / 1000));
+    setReviewPausedByPlayerId(playerId ?? null);
+    setReviewPausedByName(playerName ?? null);
+  }, []);
+
+  const pauseReview = useCallback(async () => {
+    const { currentQuestion, currentResult, selfPlayer } = stateRef.current;
+    const nextQuestionAt = reviewNextQuestionAtRef.current;
+    if (!currentQuestion || !currentResult || !selfPlayer || !nextQuestionAt || reviewRemainingMsRef.current != null) {
+      return;
+    }
+
+    const remainingMs = Math.max(0, nextQuestionAt - Date.now());
+    if (remainingMs <= 0) {
+      return;
+    }
+
+    applyReviewPause(selfPlayer.id, selfPlayer.name, remainingMs);
+    void send({
+      type: 'question:review_pause',
+      playerId: selfPlayer.id,
+      playerName: selfPlayer.name,
+      remainingMs,
+    });
+  }, [applyReviewPause, send]);
+
+  const resumeReview = useCallback(async () => {
+    const remainingMs = reviewRemainingMsRef.current;
+    if (remainingMs == null) {
+      return;
+    }
+
+    const nextQuestionAt = getCoordinatorNow() + remainingMs;
+    applyReviewStart(nextQuestionAt);
+    void send({ type: 'question:review_resume', nextQuestionAt });
+  }, [applyReviewStart, getCoordinatorNow, send]);
 
   const judgeAndBroadcastResult = useCallback(async (buzz: Buzz) => {
     const { currentQuestion, currentResult, lockedOutPlayers, players } = stateRef.current;
@@ -961,6 +1107,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       activeBuzzerIdRef.current = null;
       setBuzzerAnswer('');
       setBuzzerResult(null);
+      startReviewCountdown();
     } else {
       const newLockedOut = [...lockedOutPlayers, buzz.playerId];
       setLockedOutPlayers(newLockedOut);
@@ -987,6 +1134,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setBuzzerAnswer('');
         clearRevealPause();
         void send({ type: 'buzz:unlock', lockedOutPlayers: newLockedOut, allLockedOut: true, lastResult: result });
+        startReviewCountdown();
       } else {
         // Delay unlock so everyone sees the wrong answer briefly
         clearWrongAnswerTimer();
@@ -1010,13 +1158,15 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         }, SCORING.WRONG_ANSWER_DISPLAY_MS);
       }
     }
-  }, [send, addBuzzToSummary, applyResumedRevealStartTime, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearWrongAnswerTimer, getCoordinatorNow, getResumedRevealStartTime, grantNextQueuedBuzzer, startBuzzTimer]);
+  }, [send, addBuzzToSummary, applyResumedRevealStartTime, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearWrongAnswerTimer, getCoordinatorNow, getResumedRevealStartTime, grantNextQueuedBuzzer, startBuzzTimer, startReviewCountdown]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Event Handler
   // ───────────────────────────────────────────────────────────────────────────
 
   const handleEvent = useCallback((event: GameEvent) => {
+    if (isLeavingSessionRef.current) return;
+
     switch (event.type) {
       case 'player:join': {
         setPlayers(prev => uniquePlayersById([...prev, event.player]));
@@ -1079,8 +1229,29 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
             questionRecords: s.summary?.questions ?? [],
             gameCode: s.gameCode ?? undefined,
             readyPlayers: s.readyPlayers,
+            reviewNextQuestionAt: reviewNextQuestionAtRef.current != null
+              ? localTimeToCoordinator(reviewNextQuestionAtRef.current)
+              : null,
+            reviewPausedByPlayerId: s.reviewPausedByPlayerId,
+            reviewPausedByName: s.reviewPausedByName,
+            reviewRemainingMs: reviewRemainingMsRef.current,
           };
           void send({ type: 'state:sync', targetPlayerId: event.player.id, state: syncPayload });
+        }
+        const preloaded = preloadedQuestionRef.current;
+        if (
+          preloaded &&
+          s.status === 'lobby' &&
+          s.selfPlayer &&
+          event.player.id !== s.selfPlayer.id &&
+          isCoordinatorFn()
+        ) {
+          void send({
+            type: 'question:preload',
+            tossup: preloaded.tossup,
+            powerMarkWordIndex: preloaded.pmIndex,
+            settingsKey: preloaded.settingsKey,
+          });
         }
         break;
       }
@@ -1189,6 +1360,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           pendingSettings: null,
         };
         setStatus('playing');
+        setIsLoading(true);
         setIsBuzzLocked(false);
         setLockedOutPlayers([]);
         setCurrentResult(null);
@@ -1197,6 +1369,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setBuzzWordIndex(undefined);
         clearBuzzQueue();
         setCountdownSeconds(null);
+        clearReviewCountdown();
         revealPausedAtRef.current = null;
         revealPausedWordIndexRef.current = null;
         currentRevealWordIndexRef.current = null;
@@ -1204,7 +1377,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setPausedByName(null);
         if (event.hostId) setHostId(event.hostId);
         if (isCoordinatorFn()) {
-          prefetchAndDistribute();
+          void fetchAndBroadcastQuestion();
         }
         break;
       }
@@ -1223,6 +1396,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         // Rule 2: Apply settings from host to all players
         prefetchedRef.current = null;
         prefetchInFlightKeyRef.current = null;
+        prefetchInFlightPromiseRef.current = null;
         preloadedQuestionRef.current = null;
         prefetchAbortRef.current?.abort();
         if (event.lobby) {
@@ -1261,6 +1435,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setPromptText(null);
         promptedPlayerRef.current = null;
         currentRevealWordIndexRef.current = null;
+        clearReviewCountdown();
         clearPendingTyping();
         clearBuzzQueue();
         break;
@@ -1275,6 +1450,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         clearBuzzTimer();
         clearWrongAnswerTimer();
         clearCountdownTimer();
+        clearReviewCountdown();
         clearPendingTyping();
         if (event.summary) {
           setSummary(event.summary);
@@ -1291,6 +1467,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setCurrentQuestion(event.tossup);
         setCurrentBuzzer(null);
         activeBuzzerIdRef.current = null;
+        setIsLoading(false);
         setIsBuzzLocked(false);
         setLockedOutPlayers([]);
         clearBuzzTimer();
@@ -1308,6 +1485,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         clearBuzzQueue();
         setPromptText(null);
         promptedPlayerRef.current = null;
+        clearReviewCountdown();
         revealPausedAtRef.current = null;
         revealPausedWordIndexRef.current = null;
         currentRevealWordIndexRef.current = null;
@@ -1346,6 +1524,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           setCurrentQuestion(preloaded.tossup);
           setCurrentBuzzer(null);
           activeBuzzerIdRef.current = null;
+          setIsLoading(false);
           setIsBuzzLocked(false);
           setLockedOutPlayers([]);
           clearBuzzTimer();
@@ -1359,6 +1538,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           clearBuzzQueue();
           setPromptText(null);
           promptedPlayerRef.current = null;
+          clearReviewCountdown();
           revealPausedAtRef.current = null;
           revealPausedWordIndexRef.current = null;
           currentRevealWordIndexRef.current = null;
@@ -1367,6 +1547,21 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           clearPendingTyping();
           addQuestionToSummary(preloaded.tossup, preloaded.pmIndex);
         }
+        break;
+      }
+
+      case 'question:review_start': {
+        applyReviewStart(event.nextQuestionAt);
+        break;
+      }
+
+      case 'question:review_pause': {
+        applyReviewPause(event.playerId, event.playerName, event.remainingMs);
+        break;
+      }
+
+      case 'question:review_resume': {
+        applyReviewStart(event.nextQuestionAt);
         break;
       }
 
@@ -1675,6 +1870,17 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         setBuzzQueue(buzzQueueRef.current);
         if (s.gameCode) setGameCode(s.gameCode);
         if (s.readyPlayers) setReadyPlayers(s.readyPlayers);
+        if (s.reviewRemainingMs != null) {
+          applyReviewPause(
+            s.reviewPausedByPlayerId ?? undefined,
+            s.reviewPausedByName ?? undefined,
+            s.reviewRemainingMs,
+          );
+        } else if (s.reviewNextQuestionAt != null) {
+          applyReviewStart(s.reviewNextQuestionAt);
+        } else {
+          clearReviewCountdown();
+        }
         setSummary(prev => ({
           sessionId: prev?.sessionId ?? stateRef.current.sessionId ?? '',
           players: syncedPlayers,
@@ -1690,7 +1896,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         break;
       }
     }
-  }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, applyPendingSettingsForNextQuestion, applyResumedRevealStartTime, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping, fetchAndBroadcastQuestion, getCurrentRevealWordIndex, getResumedRevealStartTime, judgeAndBroadcastResult, pauseRevealForBuzz, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState, prefetchAndDistribute, coordinatorTimeToLocal, localTimeToCoordinator, applyGamePause, applyGameResume]);
+    }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, applyPendingSettingsForNextQuestion, applyResumedRevealStartTime, applyReviewPause, applyReviewStart, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearReviewCountdown, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping, fetchAndBroadcastQuestion, getCurrentRevealWordIndex, getResumedRevealStartTime, judgeAndBroadcastResult, pauseRevealForBuzz, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState, prefetchAndDistribute, coordinatorTimeToLocal, localTimeToCoordinator, applyGamePause, applyGameResume]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Coordinator Transfer Detection (Rule 4)
@@ -2031,8 +2237,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     // Coordinator broadcasts to ensure consistency
     if (isCoordinatorFn()) {
       void send({ type: 'question:timeup', questionId: currentQuestion.id });
+      startReviewCountdown();
     }
-  }, [clearBuzzQueue, isCoordinatorFn, send]);
+  }, [clearBuzzQueue, isCoordinatorFn, send, startReviewCountdown]);
 
   const pauseGame = useCallback(async () => {
     const player = stateRef.current.selfPlayer;
@@ -2063,6 +2270,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     // Invalidate prefetch + preload since settings changed
     prefetchedRef.current = null;
     prefetchInFlightKeyRef.current = null;
+    prefetchInFlightPromiseRef.current = null;
     preloadedQuestionRef.current = null;
     prefetchAbortRef.current?.abort();
     if (lobbyOnly) {
@@ -2109,11 +2317,12 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     setPromptText(null);
     promptedPlayerRef.current = null;
     currentRevealWordIndexRef.current = null;
+    clearReviewCountdown();
     clearPendingTyping();
     clearBuzzQueue(true);
     setStatus('paused');
     await send({ type: 'game:settings', settings: newSettings });
-  }, [clearBuzzQueue, clearPendingTyping, isCoordinatorFn, prefetchAndDistribute, send]);
+  }, [clearBuzzQueue, clearPendingTyping, clearReviewCountdown, isCoordinatorFn, prefetchAndDistribute, send]);
 
   // Host-only: force end game for everyone
   const endGame = useCallback(async () => {
@@ -2129,25 +2338,30 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     clearBuzzTimer();
     clearWrongAnswerTimer();
     clearCountdownTimer();
+    clearReviewCountdown();
     clearPendingTyping();
-  }, [send, clearBuzzQueue, clearBuzzTimer, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping]);
+  }, [send, clearBuzzQueue, clearBuzzTimer, clearWrongAnswerTimer, clearCountdownTimer, clearReviewCountdown, clearPendingTyping]);
 
   // Rule 1: Graceful leave without ending game for others
   const leaveGame = useCallback(async () => {
+    if (isLeavingSessionRef.current) return;
+    isLeavingSessionRef.current = true;
+
     const { selfPlayer } = stateRef.current;
+    setStatus('ended');
 
     if (selfPlayer) {
       await send({ type: 'player:leave', playerId: selfPlayer.id });
     }
     await transportRef.current.disconnect();
-    setStatus('ended');
     activeBuzzerIdRef.current = null;
     clearBuzzQueue();
     clearBuzzTimer();
     clearWrongAnswerTimer();
     clearCountdownTimer();
+    clearReviewCountdown();
     clearPendingTyping();
-  }, [send, clearBuzzQueue, clearBuzzTimer, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping]);
+  }, [send, clearBuzzQueue, clearBuzzTimer, clearWrongAnswerTimer, clearCountdownTimer, clearReviewCountdown, clearPendingTyping]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // New Actions: Ready, Kick, Host Transfer, Countdown
@@ -2225,6 +2439,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         // Trigger locally too
         setPendingSettings(null);
         setStatus('playing');
+        setIsLoading(true);
         setIsBuzzLocked(false);
         setLockedOutPlayers([]);
         setCurrentResult(null);
@@ -2243,11 +2458,11 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         });
 
         if (isCoordinatorFn()) {
-          prefetchAndDistribute();
+          void fetchAndBroadcastQuestion();
         }
       }
     }, 1000);
-  }, [clearBuzzQueue, isCoordinatorFn, isHostValue, prefetchAndDistribute, send]);
+  }, [clearBuzzQueue, fetchAndBroadcastQuestion, isCoordinatorFn, isHostValue, prefetchAndDistribute, send]);
 
   const completeForcedExit = useCallback(() => {
     resetState();
@@ -2290,6 +2505,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     buzzQueuePosition,
     pausedByPlayerId,
     pausedByName,
+    reviewSecondsRemaining,
+    reviewPausedByPlayerId,
+    reviewPausedByName,
     readyPlayers,
     connectionStatuses,
     countdownSeconds,
@@ -2304,6 +2522,8 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     noBuzzTimeout,
     pauseGame,
     resumeGame,
+    pauseReview,
+    resumeReview,
     updateSettings,
     endGame,
     leaveGame,
@@ -2318,9 +2538,10 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     isLoading, isBuzzLocked, isSelfLockedOut, summary, selfPlayer,
     hostId, scores, isHostValue, isCoordinatorValue, buzzTimerEnd, revealStartTime,
     buzzerAnswer, buzzerResult, promptText, buzzQueuePosition, pausedByPlayerId, pausedByName,
+    reviewSecondsRemaining, reviewPausedByPlayerId, reviewPausedByName,
     readyPlayers, connectionStatuses, countdownSeconds, playerColors,
     hostGame, joinGame, startNextQuestion, buzzIn, submitBuzzAnswer, sendBuzzTyping, syncRevealWordIndex, noBuzzTimeout,
-    pauseGame, resumeGame, updateSettings, endGame, leaveGame,
+    pauseGame, resumeGame, pauseReview, resumeReview, updateSettings, endGame, leaveGame,
     toggleReady, kickPlayer, transferHost, startGameCountdown, acknowledgeForcedExit, completeForcedExit,
   ]);
 

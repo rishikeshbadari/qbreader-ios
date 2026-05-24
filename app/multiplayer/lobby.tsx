@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import { usePreventRemove } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, FlatList, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -94,6 +95,44 @@ export default function LobbyScreen() {
   const [tempCategories, setTempCategories] = useState<string[]>([]);
   const [tempDifficulties, setTempDifficulties] = useState<number[]>([]);
   const [tempSpeed, setTempSpeed] = useState(0.5);
+  const [isLeavingLobby, setIsLeavingLobby] = useState(false);
+  const hasLeftLobbyRef = useRef(false);
+  const navigatingToGameRef = useRef(false);
+  const leaveGameRef = useRef(leaveGame);
+  const leaveOnUnmountRef = useRef({
+    status,
+    gameCode,
+    selfPlayer,
+    isLeavingLobby,
+  });
+
+  useEffect(() => {
+    leaveGameRef.current = leaveGame;
+  }, [leaveGame]);
+
+  useEffect(() => {
+    leaveOnUnmountRef.current = {
+      status,
+      gameCode,
+      selfPlayer,
+      isLeavingLobby,
+    };
+  }, [gameCode, isLeavingLobby, selfPlayer, status]);
+
+  useEffect(() => () => {
+    const latest = leaveOnUnmountRef.current;
+    if (
+      latest.status === 'lobby' &&
+      latest.gameCode &&
+      latest.selfPlayer &&
+      !latest.isLeavingLobby &&
+      !hasLeftLobbyRef.current &&
+      !navigatingToGameRef.current
+    ) {
+      hasLeftLobbyRef.current = true;
+      void leaveGameRef.current();
+    }
+  }, []);
 
   useEffect(() => {
     if (showHostTransferModal) {
@@ -103,13 +142,33 @@ export default function LobbyScreen() {
 
   // Navigate to game when status changes to playing
   useEffect(() => {
-    if (status === 'playing') {
+    if (status === 'playing' && !hasLeftLobbyRef.current && !isLeavingLobby) {
+      navigatingToGameRef.current = true;
       router.replace('/multiplayer/game');
     }
-  }, [status, router]);
+  }, [isLeavingLobby, status, router]);
+
+  const allowLobbyRemoval = useCallback(() => {
+    hasLeftLobbyRef.current = true;
+    setIsLeavingLobby(true);
+  }, []);
+
+  const shouldPreventLobbyRemoval =
+    status === 'lobby' &&
+    Boolean(gameCode && selfPlayer) &&
+    isHost &&
+    hostTransferCandidates.length > 0 &&
+    !hasLeftLobbyRef.current &&
+    !navigatingToGameRef.current &&
+    !isLeavingLobby;
+
+  usePreventRemove(shouldPreventLobbyRemoval, () => {
+    setSelectedHostId(defaultHostCandidateId);
+    setShowHostTransferModal(true);
+  });
 
   useEffect(() => {
-    if (!gameCode && status !== 'ended') {
+    if (!gameCode && status !== 'ended' && !hasLeftLobbyRef.current) {
       router.dismissTo('/(tabs)/multiplayer');
     }
   }, [gameCode, status, router]);
@@ -145,13 +204,14 @@ export default function LobbyScreen() {
           text: 'Leave',
           style: 'destructive',
           onPress: async () => {
+            allowLobbyRemoval();
             await leaveGame();
             router.dismissTo('/(tabs)/multiplayer');
           },
         },
       ],
     );
-  }, [defaultHostCandidateId, hostTransferCandidates.length, isHost, leaveGame, router]);
+  }, [allowLobbyRemoval, defaultHostCandidateId, hostTransferCandidates.length, isHost, leaveGame, router]);
 
   const handleConfirmHostTransfer = useCallback(async () => {
     const nextHostId = selectedHostId ?? defaultHostCandidateId;
@@ -160,13 +220,14 @@ export default function LobbyScreen() {
     setIsTransferringHost(true);
     try {
       await transferHost(nextHostId);
+      allowLobbyRemoval();
       await leaveGame();
       setShowHostTransferModal(false);
       router.dismissTo('/(tabs)/multiplayer');
     } finally {
       setIsTransferringHost(false);
     }
-  }, [defaultHostCandidateId, isTransferringHost, leaveGame, router, selectedHostId, transferHost]);
+  }, [allowLobbyRemoval, defaultHostCandidateId, isTransferringHost, leaveGame, router, selectedHostId, transferHost]);
 
   const handleKick = useCallback((playerId: string, playerName: string) => {
     Alert.alert(

@@ -94,7 +94,3 @@ This app builds on the QB Reader ecosystem:
 - [QB Reader API docs](https://www.qbreader.org/tools/api-docs/) — API reference.
 - [qbreader/python-module](https://github.com/qbreader/python-module) — Python API wrapper.
 - [qb-answer-checker](https://github.com/qbreader/qb-answer-checker) — answerline checking.
-
-## Privacy Policy
-
-The QBReader privacy policy is available at [privacy-policy.html](privacy-policy.html).

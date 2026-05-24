@@ -1,5 +1,5 @@
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -67,7 +67,6 @@ export function QuestionCard({
   const revealIndexRef = useRef(0);
   const revealStartTimeRef = useRef(revealStartTime);
   const revealIntervalMs = getRevealIntervalMs(effectiveRevealSpeed);
-  const scrollPaddingBottom = 0;
   const shouldAnimateQuestion =
     Boolean(tossup?.question) &&
     !isLoading &&
@@ -78,6 +77,23 @@ export function QuestionCard({
   const isRevealRunning = shouldAnimateQuestion && revealActive;
   const canShowRevealButton =
     shouldAnimateQuestion && revealActive && showRevealButton && !isBuzzed && !questionOnly;
+  const scrollPaddingBottom = canShowRevealButton
+    ? verticalScale(56)
+    : questionOnly
+      ? spacing.xl
+      : 0;
+  const shouldAutoScrollQuestion = showAnswer || isRevealRunning || hasRevealedFullQuestion;
+
+  const scrollQuestionToEnd = useCallback((animated: boolean) => {
+    requestAnimationFrame(() => {
+      questionScrollRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
+
+  const handleQuestionContentChanged = useCallback(() => {
+    if (!shouldAutoScrollQuestion) return;
+    scrollQuestionToEnd(!isRevealRunning);
+  }, [isRevealRunning, scrollQuestionToEnd, shouldAutoScrollQuestion]);
 
   useEffect(() => {
     setHasRevealedFullQuestion(false);
@@ -277,13 +293,12 @@ export function QuestionCard({
   useEffect(() => {
     if (!questionScrollRef.current) return;
 
-    // Scroll to bottom when: showing answer, during reveal, or after full reveal
-    if (showAnswer || isRevealRunning || hasRevealedFullQuestion) {
-      questionScrollRef.current.scrollToEnd({ animated: true });
+    if (shouldAutoScrollQuestion) {
+      scrollQuestionToEnd(!isRevealRunning);
     } else {
       questionScrollRef.current.scrollTo({ y: 0, animated: false });
     }
-  }, [displayedQuestion, showAnswer, isRevealRunning, hasRevealedFullQuestion]);
+  }, [displayedQuestion, isRevealRunning, scrollQuestionToEnd, shouldAutoScrollQuestion]);
 
   useEffect(() => {
     onFullQuestionRevealChange?.(hasRevealedFullQuestion);
@@ -360,6 +375,8 @@ export function QuestionCard({
               { paddingBottom: scrollPaddingBottom },
             ]}
             keyboardShouldPersistTaps="handled"
+            onContentSizeChange={handleQuestionContentChanged}
+            onLayout={handleQuestionContentChanged}
             showsVerticalScrollIndicator={false}>
             <ThemedText style={[styles.questionBody, questionOnly && styles.questionOnlyBody]}>
               {shouldAnimateQuestion

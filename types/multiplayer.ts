@@ -10,6 +10,7 @@ export const SCORING = {
   INCORRECT: 0,
   BUZZ_TIMEOUT_SECONDS: 10,
   WRONG_ANSWER_DISPLAY_MS: 1500,
+  REVIEW_SECONDS: 5,
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -113,6 +114,10 @@ export type StateSyncPayload = {
   questionRecords: QuestionRecord[];
   gameCode?: string;
   readyPlayers?: string[];
+  reviewNextQuestionAt?: number | null;
+  reviewPausedByPlayerId?: string | null;
+  reviewPausedByName?: string | null;
+  reviewRemainingMs?: number | null;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,6 +142,9 @@ export type GameEvent =
   | { type: 'question:new'; tossup: Tossup; powerMarkWordIndex?: number; revealStartTime?: number }
   | { type: 'question:preload'; tossup: Tossup; powerMarkWordIndex?: number; settingsKey?: string }
   | { type: 'question:reveal'; revealStartTime: number }
+  | { type: 'question:review_start'; nextQuestionAt: number }
+  | { type: 'question:review_pause'; playerId?: string; playerName?: string; remainingMs: number }
+  | { type: 'question:review_resume'; nextQuestionAt: number }
   | { type: 'question:request' }
   | { type: 'clock:ping'; playerId: string; sentAt: number }
   | { type: 'clock:pong'; playerId: string; sentAt: number; coordinatorTime: number }

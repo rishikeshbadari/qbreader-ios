@@ -144,31 +144,37 @@ export default function MultiplayerSummaryScreen() {
 
       {/* Scoreboard */}
       <View style={[styles.scoreboard, { borderColor }]}>
-        {scores.map((score, idx) => (
-          <View key={score.id} style={styles.scoreRow}>
-            <View style={styles.scoreRank}>
-              <ThemedText type="defaultSemiBold" style={styles.scoreRankText}>
-                {idx + 1}
-              </ThemedText>
-            </View>
-            <View style={styles.scoreInfo}>
-              <View style={styles.nameRow}>
-                <ThemedText type="defaultSemiBold">{score.name}</ThemedText>
-                {score.status === 'left' ? (
-                  <ThemedText style={[styles.leftBadge, { color: mutedColor }]}>(left)</ThemedText>
-                ) : null}
+        <ScrollView
+          style={styles.scoreboardList}
+          contentContainerStyle={styles.scoreboardContent}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={scores.length > 4}>
+          {scores.map((score, idx) => (
+            <View key={score.id} style={styles.scoreRow}>
+              <View style={styles.scoreRank}>
+                <ThemedText type="defaultSemiBold" style={styles.scoreRankText}>
+                  {idx + 1}
+                </ThemedText>
               </View>
-              <ThemedText style={[styles.scoreDetail, { color: mutedColor }]}>
-                {score.correct} correct{score.powers > 0 ? ` (${score.powers} powers)` : ''} · {score.incorrect} wrong · {Math.round(score.accuracy * 100)}%
+              <View style={styles.scoreInfo}>
+                <View style={styles.nameRow}>
+                  <ThemedText type="defaultSemiBold">{score.name}</ThemedText>
+                  {score.status === 'left' ? (
+                    <ThemedText style={[styles.leftBadge, { color: mutedColor }]}>(left)</ThemedText>
+                  ) : null}
+                </View>
+                <ThemedText style={[styles.scoreDetail, { color: mutedColor }]}>
+                  {score.correct} correct{score.powers > 0 ? ` (${score.powers} powers)` : ''} · {score.incorrect} wrong · {Math.round(score.accuracy * 100)}%
+                </ThemedText>
+              </View>
+              <ThemedText
+                type="defaultSemiBold"
+                style={[styles.scoreValue, { color: score.points >= 0 ? successColor : errorColor }]}>
+                {score.points}
               </ThemedText>
             </View>
-            <ThemedText
-              type="defaultSemiBold"
-              style={[styles.scoreValue, { color: score.points >= 0 ? successColor : errorColor }]}>
-              {score.points}
-            </ThemedText>
-          </View>
-        ))}
+          ))}
+        </ScrollView>
       </View>
 
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
@@ -176,7 +182,7 @@ export default function MultiplayerSummaryScreen() {
           <ThemedText style={[styles.empty, { color: mutedColor }]}>No questions played.</ThemedText>
         ) : (
           summary.questions.map((record, idx) => (
-            <View key={record.question.id ?? idx} style={[styles.card, { borderColor }]}>
+            <View key={`${record.question.id ?? 'question'}-${idx}`} style={[styles.card, { borderColor }]}>
               <View style={styles.cardHeader}>
                 <ThemedText type="defaultSemiBold">Question {idx + 1}</ThemedText>
                 <ThemedText style={[styles.setName, { color: mutedColor }]}>
@@ -184,7 +190,7 @@ export default function MultiplayerSummaryScreen() {
                 </ThemedText>
               </View>
 
-              <ThemedText style={styles.questionText} numberOfLines={3}>
+              <ThemedText style={styles.questionText}>
                 {record.question.question}
               </ThemedText>
 
@@ -272,6 +278,12 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: scale(16),
     padding: spacing.md,
+    maxHeight: verticalScale(220),
+  },
+  scoreboardList: {
+    flexGrow: 0,
+  },
+  scoreboardContent: {
     gap: spacing.sm,
   },
   scoreRow: {

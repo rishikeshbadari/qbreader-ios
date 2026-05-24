@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   InputAccessoryView,
@@ -66,6 +66,8 @@ type Props = {
   questionOnly?: boolean;
   showMainActionLabel?: boolean;
   showSupplementalText?: boolean;
+  hideMainActionWhenResult?: boolean;
+  resultAccessory?: ReactNode;
 
   // Bottom padding (for tab bar)
   bottomPadding?: number;
@@ -118,6 +120,8 @@ export function QuizGameLayout({
   questionOnly = false,
   showMainActionLabel = true,
   showSupplementalText = true,
+  hideMainActionWhenResult = false,
+  resultAccessory,
   bottomPadding = 0,
   parentHandlesBottomSafeArea = false,
   buzzTimerEnd,
@@ -357,6 +361,7 @@ export function QuizGameLayout({
   const isAnswering = (activeHasBuzzed || (!isBuzzerControlled && !!promptText && !result)) && isPlaying && !result && !showWrongAnswerFlash;
   const showResult = Boolean(result);
   const showNextButton = showResult;
+  const shouldShowMainAction = !(showResult && hideMainActionWhenResult);
   const canBuzz = Boolean(
     question &&
     !isLoading &&
@@ -550,33 +555,37 @@ export function QuizGameLayout({
             )}
           </View>
 
+          {showResult && resultAccessory ? resultAccessory : null}
+
           {/* Action button - Buzz or Next */}
-          <Pressable
-            onPress={handleMainAction}
-            disabled={mainButtonDisabled}
-            accessibilityRole="button"
-            accessibilityLabel={mainActionLabel}
-            accessibilityState={{ disabled: mainButtonDisabled }}
-            style={({ pressed }) => [
-              styles.mainButton,
-              questionOnly && styles.questionOnlyMainButton,
-              {
-                backgroundColor: mainButtonDisabled ? mutedColor : showNextButton ? brandColor : dangerColor,
-                opacity: mainButtonDisabled ? 0.35 : pressed ? 0.9 : 1,
-              },
-            ]}>
-            {showMainActionIcon ? (
-              <MaterialIcons
-                name={showNextButton ? 'arrow-forward' : 'bolt'}
-                size={scale(28)}
-                color="#fff"
-              />
-            ) : (
-              <ThemedText type="defaultSemiBold" style={styles.actionLabel}>
-                {mainActionLabel}
-              </ThemedText>
-            )}
-          </Pressable>
+          {shouldShowMainAction ? (
+            <Pressable
+              onPress={handleMainAction}
+              disabled={mainButtonDisabled}
+              accessibilityRole="button"
+              accessibilityLabel={mainActionLabel}
+              accessibilityState={{ disabled: mainButtonDisabled }}
+              style={({ pressed }) => [
+                styles.mainButton,
+                questionOnly && styles.questionOnlyMainButton,
+                {
+                  backgroundColor: mainButtonDisabled ? mutedColor : showNextButton ? brandColor : dangerColor,
+                  opacity: mainButtonDisabled ? 0.35 : pressed ? 0.9 : 1,
+                },
+              ]}>
+              {showMainActionIcon ? (
+                <MaterialIcons
+                  name={showNextButton ? 'arrow-forward' : 'bolt'}
+                  size={scale(28)}
+                  color="#fff"
+                />
+              ) : (
+                <ThemedText type="defaultSemiBold" style={styles.actionLabel}>
+                  {mainActionLabel}
+                </ThemedText>
+              )}
+            </Pressable>
+          ) : null}
 
           {/* Extra info */}
           {showSupplementalText && result?.directedPrompt && (

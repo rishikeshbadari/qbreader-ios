@@ -77,9 +77,14 @@ export default function MultiplayerGameScreen() {
     promptText,
     pausedByPlayerId,
     pausedByName,
+    reviewSecondsRemaining,
+    reviewPausedByPlayerId,
+    reviewPausedByName,
     noBuzzTimeout,
     pauseGame,
     resumeGame,
+    pauseReview,
+    resumeReview,
     updateSettings,
     transferHost,
     leaveGame,
@@ -103,6 +108,7 @@ export default function MultiplayerGameScreen() {
   const [showHostTransferModal, setShowHostTransferModal] = useState(false);
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
   const [isTransferringHost, setIsTransferringHost] = useState(false);
+  const [settingsPauseMode, setSettingsPauseMode] = useState<'game' | 'review' | null>(null);
 
   // Temp settings state for modal
   const [tempCategories, setTempCategories] = useState<string[]>([]);
@@ -141,7 +147,17 @@ export default function MultiplayerGameScreen() {
 
   const handleOpenSettings = async () => {
     if (!isHost || settingsLockedForActiveBuzz) return;
-    await pauseGame();
+    if (currentResult) {
+      if (!reviewPausedByPlayerId && reviewSecondsRemaining != null) {
+        await pauseReview();
+        setSettingsPauseMode('review');
+      } else {
+        setSettingsPauseMode(null);
+      }
+    } else {
+      await pauseGame();
+      setSettingsPauseMode('game');
+    }
     setTempCategories(effectiveSettings?.categories ?? availableCategories.map(c => c.name));
     setTempDifficulties(effectiveSettings?.difficulties ?? availableDifficulties.flatMap(d => d.values));
     setTempSpeed(effectiveSettings?.revealSpeed ?? revealSpeed);
@@ -158,23 +174,44 @@ export default function MultiplayerGameScreen() {
     setShowSettings(false);
 
     if (areSettingsEqual(effectiveSettings, nextSettings)) {
-      await resumeGame();
+      if (settingsPauseMode === 'review') {
+        await resumeReview();
+      } else if (settingsPauseMode === 'game') {
+        await resumeGame();
+      }
+      setSettingsPauseMode(null);
+      return;
+    }
+
+    if (currentResult) {
+      await updateSettings(nextSettings, { deferUntilNextQuestion: true });
+      if (settingsPauseMode === 'review') {
+        await resumeReview();
+      }
+      setSettingsPauseMode(null);
       return;
     }
 
     if (hasActiveUnresolvedQuestion) {
       await updateSettings(nextSettings, { deferUntilNextQuestion: true });
       await resumeGame();
+      setSettingsPauseMode(null);
       return;
     }
 
     await updateSettings(nextSettings);
     await startNextQuestion();
+    setSettingsPauseMode(null);
   };
 
   const handleCancelSettings = async () => {
     setShowSettings(false);
-    await resumeGame();
+    if (settingsPauseMode === 'review') {
+      await resumeReview();
+    } else if (settingsPauseMode === 'game') {
+      await resumeGame();
+    }
+    setSettingsPauseMode(null);
   };
 
   const handleLeave = async () => {
@@ -247,6 +284,52 @@ export default function MultiplayerGameScreen() {
   const waitingForHostToStart = isPlaying && !currentQuestion && !isLoading && !isHost;
   // Only show overlay for pause states — lobby is handled by the lobby screen
   const showOverlay = (isPlaying && !currentQuestion && !isLoading) || showPausedOverlay;
+  const isReviewPaused = Boolean(reviewPausedByPlayerId || reviewPausedByName);
+  const reviewPausedLabel =
+    reviewPausedByPlayerId === selfPlayer?.id
+      ? 'Paused by you'
+      : reviewPausedByName
+        ? `Paused by ${reviewPausedByName}`
+        : 'Paused';
+  const reviewAccessory = currentResult ? (
+    <View style={[styles.reviewPanel, { borderColor, backgroundColor: surfaceColor }]}>
+      <View style={styles.reviewTextBlock}>
+        <ThemedText type="defaultSemiBold" style={styles.reviewTitle}>
+          {isReviewPaused
+            ? reviewPausedLabel
+            : reviewSecondsRemaining != null
+              ? `Next question in ${reviewSecondsRemaining}s`
+              : 'Preparing next question...'}
+        </ThemedText>
+        <ThemedText style={[styles.reviewSubtitle, { color: mutedColor }]}>
+          {isReviewPaused ? 'Resume when everyone is ready.' : 'Pause if you want more time to read.'}
+        </ThemedText>
+      </View>
+      <Pressable
+        onPress={isReviewPaused ? resumeReview : pauseReview}
+        disabled={!isReviewPaused && reviewSecondsRemaining == null}
+        accessibilityRole="button"
+        accessibilityLabel={isReviewPaused ? 'Resume review countdown' : 'Pause review countdown'}
+        testID={isReviewPaused ? 'review-resume-button' : 'review-pause-button'}
+        style={({ pressed }) => [
+          styles.reviewButton,
+          {
+            borderColor,
+            backgroundColor: isReviewPaused ? brandColor : 'transparent',
+            opacity: !isReviewPaused && reviewSecondsRemaining == null ? 0.4 : pressed ? 0.75 : 1,
+          },
+        ]}>
+        <ThemedText
+          type="defaultSemiBold"
+          style={[
+            styles.reviewButtonText,
+            { color: isReviewPaused ? '#fff' : textColor },
+          ]}>
+          {isReviewPaused ? 'Resume' : 'Pause'}
+        </ThemedText>
+      </Pressable>
+    </View>
+  ) : null;
 
   return (
     <ThemedView style={[styles.gameContainer, { paddingTop: insets.top }]}>
@@ -333,6 +416,8 @@ export default function MultiplayerGameScreen() {
         promptText={promptText}
         onNext={startNextQuestion}
         showMainActionLabel={false}
+        hideMainActionWhenResult
+        resultAccessory={reviewAccessory}
         bottomPadding={spacing.sm}
         overlay={
           showOverlay ? (
@@ -504,6 +589,37 @@ const styles = StyleSheet.create({
   hudButtonText: {
     fontSize: responsiveFont(13),
     fontWeight: '600',
+  },
+  reviewPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(16),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: verticalScale(10),
+  },
+  reviewTextBlock: {
+    flex: 1,
+    gap: verticalScale(2),
+  },
+  reviewTitle: {
+    fontSize: responsiveFont(15),
+  },
+  reviewSubtitle: {
+    fontSize: responsiveFont(12),
+  },
+  reviewButton: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(999),
+    paddingHorizontal: spacing.md,
+    paddingVertical: verticalScale(8),
+    minWidth: scale(88),
+    alignItems: 'center',
+  },
+  reviewButtonText: {
+    fontSize: responsiveFont(13),
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,

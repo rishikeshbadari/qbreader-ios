@@ -30,6 +30,9 @@ export default function MultiplayerLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
+        headerBackButtonMenuEnabled: false,
+        gestureEnabled: true,
+        fullScreenGestureEnabled: false,
       }}
     />
   );

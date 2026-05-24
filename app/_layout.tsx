@@ -108,7 +108,13 @@ export default function RootLayout() {
                           fullScreenGestureEnabled: false,
                         }}
                       />
-                      <Stack.Screen name="multiplayer" options={{ headerShown: false }} />
+                      <Stack.Screen
+                        name="multiplayer"
+                        options={{
+                          headerShown: false,
+                          headerBackButtonMenuEnabled: false,
+                        }}
+                      />
                       <Stack.Screen name="+not-found" />
                     </Stack>
                     <StatusBar style="auto" />
