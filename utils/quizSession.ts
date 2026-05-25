@@ -63,6 +63,15 @@ export function resolvePromptDisplayText(directedPrompt?: string | null): string
   return trimmedPrompt ? trimmedPrompt : DEFAULT_PROMPT_TEXT;
 }
 
+export function formatPromptHint(promptText?: string | null): string | null {
+  const trimmedPrompt = promptText?.trim();
+  if (!trimmedPrompt) {
+    return null;
+  }
+
+  return /^prompt\s*:/i.test(trimmedPrompt) ? trimmedPrompt : `Prompt: ${trimmedPrompt}`;
+}
+
 export function prependHistoryEntry(
   history: SessionHistoryEntry[],
   entry: SessionHistoryEntry,

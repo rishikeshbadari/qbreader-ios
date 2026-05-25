@@ -13,29 +13,30 @@ This project is a smaller Expo / React Native client, not a replacement for the 
 - Focuses on a native-feeling iOS interface for reading, buzzing, settings, history, and multiplayer rooms.
 - Does not include the full website feature set such as database search, accounts, Geoword, frequency lists, packet tools, or site-wide community stats.
 
-Questions come from QB Reader’s database, which is built from packets hosted on [quizbowlpackets.com](https://quizbowlpackets.com/). Respect the original packet authors’ rights and non-commercial usage expectations.
+Questions come from QB Reader's database, which is built from packets hosted on [quizbowlpackets.com](https://quizbowlpackets.com/). Respect the original packet authors' rights and non-commercial usage expectations.
 
 ## Features
 
-- Single-player tossup practice with progressive reveal and answer checking.
-- Local History with All, Correct, Skipped, and Incorrect views.
-- Category, difficulty, and reveal-speed settings.
-- Multiplayer rooms with game codes, host settings, ready states, synced reveal timing, buzzing, queueing, and summaries.
+- Single-player tossup practice with progressive reveal, answer checking, one-retry prompts, local history, and an in-question skip button.
+- Category, reveal-speed, and granular 1-10 difficulty settings.
+- Difficulty presets for Middle School `[1]`, High School `[2, 3, 4, 5]`, College `[6, 7, 8, 9, 10]`, plus All.
+- Multiplayer rooms with game codes, host settings, ready states, synced reveal timing, buzzing, prompt handling, queueing, host transfer, presence cleanup, and summaries.
 - Supabase Realtime transport for production multiplayer.
-- Mock QBReader and loopback multiplayer modes for simulator playtesting.
+- Mock QBReader and loopback multiplayer modes for deterministic simulator playtesting.
 
 ## Tech Stack
 
 - Expo + React Native
 - Expo Router
 - TypeScript
-- Supabase Realtime
+- Supabase Realtime Broadcast + Presence
 - QB Reader API
 - `qb-answer-checker`
+- Node's built-in test runner for local pure-logic tests
 
 ## Getting Started
 
-Install dependencies:
+Install dependencies only when needed:
 
 ```bash
 npm install
@@ -52,11 +53,14 @@ Use Expo Go. Do not run `expo run:ios` or `expo run:android` unless you intentio
 ## Useful Commands
 
 ```bash
-npm run lint
+npm test
 npx tsc --noEmit
+npm run lint
 ```
 
-For deterministic local multiplayer playtesting:
+`npm test` compiles the pure TypeScript modules listed in `tsconfig.test.json` into `.test-build`, then runs `node --test __tests__/*.test.js`.
+
+For deterministic local playtesting:
 
 ```bash
 EXPO_PUBLIC_QBREADER_MOCK=1 EXPO_PUBLIC_USE_PAIRED_LOOPBACK=1 npx expo start --ios
@@ -64,27 +68,57 @@ EXPO_PUBLIC_QBREADER_MOCK=1 EXPO_PUBLIC_USE_PAIRED_LOOPBACK=1 npx expo start --i
 
 That mode uses mocked questions and an in-process paired transport. Use the default start command for real cross-device Supabase multiplayer.
 
+## Runtime Modes
+
+- Default Expo mode: real QBReader API and Supabase transport when Supabase config is present.
+- `EXPO_PUBLIC_QBREADER_MOCK=1`: deterministic mock tossups from `services/qbreader.ts`.
+- `EXPO_PUBLIC_USE_PAIRED_LOOPBACK=1`: in-process multiplayer bus for local host/peer playtests.
+- No Supabase config: falls back to one-client `LoopbackTransport`.
+
 ## Project Map
 
 - `app/(tabs)/index.tsx` — single-player Play tab.
 - `app/(tabs)/history.tsx` — local single-player history.
-- `app/(tabs)/settings.tsx` — categories, difficulties, reveal speed, and contact links.
+- `app/(tabs)/settings.tsx` — categories, granular difficulties, reveal speed, contact links, and playtest dev tools.
 - `app/(tabs)/multiplayer.tsx` — multiplayer hub.
 - `app/multiplayer/` — host, join, lobby, game, rules, summary, and match history routes.
-- `context/QuizSessionContext.tsx` — single-player question queue, judging, and history.
-- `context/MultiplayerContext.tsx` — multiplayer state machine, syncing, host/coordinator behavior, buzzing, and summaries.
+- `components/quiz/QuizGameLayout.tsx` — shared question layout, answer overlay, prompt display, timers, and footer accessory support.
+- `components/quiz/DifficultySelector.tsx` — presets plus 1-10 difficulty controls.
+- `context/QuizSessionContext.tsx` — single-player question queue, prefetching, judging, prompt retry, skip, and history.
+- `context/MultiplayerContext.tsx` — multiplayer state machine, syncing, host/coordinator behavior, buzzing, prompts, settings updates, presence cleanup, and summaries.
 - `context/SettingsContext.tsx` — persisted user preferences.
-- `services/qbreader.ts` — QB Reader API access and normalization.
+- `services/qbreader.ts` — QB Reader API access, retries, normalization, mock fixtures, and filter options.
 - `services/multiplayer/` — Supabase, loopback, and test transports.
-- `components/quiz/` — shared game, history, stats, and input UI.
+- `utils/` — pure helpers for settings, difficulty, reveal timing, multiplayer membership, scoring, prompt/session rules, and text.
+- `__tests__/` — local Node tests for pure app behavior.
 
-## Notes for Contributors
+## Core Behavior Notes
 
+Single-player:
+
+- Questions are prefetched aggressively to keep next-question latency low.
+- Changing filters aborts stale fetches and clears current question/result/prompt state.
+- Empty answer means skipped.
+- `SKIP` records the current tossup as skipped and immediately loads the next question. A short in-flight guard prevents spam from creating parallel transitions.
+- Prompt answers show a visible `Prompt: ...` hint and allow exactly one retry.
+
+Multiplayer:
+
+- The host owns game settings and start/end controls.
+- The coordinator is the first online active player by lexicographic player ID. The coordinator fetches questions and judges answers.
+- Questions are double-buffered with `question:preload` and revealed with `question:reveal`; `question:new` is the fallback path.
+- Wrong answers lock that player out while reveal resumes for others.
+- Presence disconnects remove players from active state. Host transfer and coordinator election should keep the game moving when someone leaves.
+- After a result, the review panel usually shows a countdown. `Preparing next question...` should only be a short transition while the coordinator fetches or hands off.
+
+## Notes for Contributors and Agents
+
+- Start with `AGENTS.md` or `CLAUDE.md` for hard rules, fragile areas, and playtest notes.
 - Keep Expo Go compatibility.
 - Avoid native module additions unless necessary.
-- Keep changes focused and test with at least one iOS simulator.
+- Prefer moving business rules into `utils/` and adding local tests.
 - Multiplayer correctness depends on coordinator and non-coordinator paths staying in sync.
-- When changing question flow, test buzzing, wrong answers, skips, late joins, and host settings changes.
+- When changing question flow, test buzzing, prompts, wrong answers, skips, late joins, app close/disconnect, host settings changes, and host transfer.
 
 ## Credits
 

@@ -1,6 +1,6 @@
 # Playtest Findings — Index
 
-This file lists every finding produced by `/playtest`. Claude reads this before each run to avoid re-finding known issues.
+This file lists every finding produced by `/playtest`. Agents should read this before each run to avoid re-finding known issues.
 
 Each row links to a finding file in this directory: `YYYY-MM-DD-NNN.md`.
 

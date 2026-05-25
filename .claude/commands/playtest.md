@@ -32,10 +32,10 @@ Read [CLAUDE.md](../../CLAUDE.md) before starting if you don't already have it i
 
 Cycle through these flows. Pick the next one not run this session, in order:
 
-1. **single-player**: tap Play overlay, answer 5 tossups with a mix of: correct answer, empty answer, 500-char garbage, rapid double-submit, navigate away + back mid-question.
-2. **mp-host**: navigate to Multiplayer tab → Start a Game → fill name → toggle some categories/difficulties → Start. In Lobby: Start playtest peer (Settings tab dev tools). When peer joins, Start Game. Play 3 questions; observe coordinator behavior, locked-out reveal, prompt directives.
+1. **single-player**: tap Play overlay, answer 5 tossups with a mix of: correct answer, prompt answer (`Einstein` then `Albert Einstein` in mock mode), empty answer, 500-char garbage, rapid double-submit, SKIP spam, navigate away + back mid-question.
+2. **mp-host**: navigate to Multiplayer tab → Start a Game → fill name → select granular difficulties/presets and categories → Start. In Lobby: Start playtest peer (Settings tab dev tools). When peer joins, Start Game. Play 3 questions; observe coordinator behavior, locked-out reveal, prompt directives, review countdown, and whether `Preparing next question...` is only transient.
 3. **mp-join**: navigate to Multiplayer tab → Join. Try invalid codes (5 chars, 6 chars no game, wrong format). Then host on a separate flow and join with the bot to verify happy path.
-4. **settings**: change difficulties to single selection, rapid-toggle categories, drag reveal speed slider through full range, return to Play tab and verify changes apply.
+4. **settings**: change difficulties to single level, preset, non-contiguous levels, and All; rapid-toggle categories; drag reveal speed slider through full range; return to Play tab and verify changes apply.
 5. **backgrounding**: during single-player active question, send app to background (`xcrun simctl spawn booted launchctl asuser $UID xcrun simctl io booted home`) for 5 seconds, then foreground; verify state.
 
 ## Adversarial Input Menu
@@ -45,6 +45,8 @@ Pick 1-2 per flow:
 - 500-character garbage string
 - Unicode / emoji answer
 - Rapid double-tap (fire 2 taps within 100ms via `simctl ui` or two MCP `tap` calls in quick succession)
+- Rapid SKIP taps in single-player
+- Close/terminate a multiplayer peer during lobby, active buzz, locked-out reveal, and review countdown
 - Force-quit mid-fetch: `xcrun simctl terminate booted host.exp.Exponent` then relaunch
 - Network simulation: `xcrun simctl status_bar booted override --dataNetwork none` (restore with `clear`)
 
@@ -61,6 +63,9 @@ A finding is anything that:
 - Produces a RedBox.
 - Leaves the UI in a state where the expected next interactive element is missing.
 - Diverges from the last-known-good snapshot in a way that isn't explained by your input (e.g., player count drops to 0 after a single tap).
+- Leaves multiplayer stuck on `Preparing next question...` longer than the fetch/handoff transition.
+- Shows disconnected or closed-app players as active participants.
+- Lets difficulty/category settings become empty.
 
 ## On Finding
 

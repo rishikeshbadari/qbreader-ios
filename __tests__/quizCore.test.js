@@ -15,6 +15,7 @@ const {
   buildQuestionFilters,
   buildQuestionFiltersKey,
   createSessionHistoryEntry,
+  formatPromptHint,
   getUniqueUnseenTossups,
   prependHistoryEntry,
   resolvePromptDisplayText,
@@ -130,6 +131,12 @@ test('prompt display text falls back when answer checker omits a directed prompt
   assert.equal(resolvePromptDisplayText(' first name '), 'first name');
   assert.equal(resolvePromptDisplayText(''), 'Be more specific');
   assert.equal(resolvePromptDisplayText(undefined), 'Be more specific');
+});
+
+test('prompt hint formatting adds the visible Prompt label once', () => {
+  assert.equal(formatPromptHint('first name?'), 'Prompt: first name?');
+  assert.equal(formatPromptHint(' Prompt: first name? '), 'Prompt: first name?');
+  assert.equal(formatPromptHint(undefined), null);
 });
 
 test('history helpers prepend entries and enforce the configured cap', () => {
