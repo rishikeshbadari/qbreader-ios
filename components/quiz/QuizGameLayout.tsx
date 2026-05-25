@@ -363,6 +363,12 @@ export function QuizGameLayout({
   // Also keep open during prompt (prevents flicker between handleSubmit and prompt effect)
   const showWrongAnswerFlash = !!buzzerResult && !buzzerResult.isCorrect && !result;
   const isAnswering = (activeHasBuzzed || (!isBuzzerControlled && !!promptText && !result)) && isPlaying && !result && !showWrongAnswerFlash;
+  const normalizedPromptText = promptText?.trim();
+  const promptHint = normalizedPromptText
+    ? /^prompt\s*:/i.test(normalizedPromptText)
+      ? normalizedPromptText
+      : `Prompt: ${normalizedPromptText}`
+    : null;
   const showResult = Boolean(result);
   const showNextButton = showResult;
   const shouldShowMainAction = !(showResult && hideMainActionWhenResult);
@@ -432,10 +438,10 @@ export function QuizGameLayout({
   const contentPaddingBottom = bottomPadding + safeAreaBottomPadding + (questionOnly ? 0 : spacing.lg);
   const answerInputContent = (
     <>
-      {showSupplementalText && promptText ? (
+      {showSupplementalText && promptHint ? (
         <View style={styles.promptHintContainer}>
           <ThemedText type="defaultSemiBold" style={[styles.promptHintText, { color: brandColor }]}>
-            {promptText}
+            {promptHint}
           </ThemedText>
         </View>
       ) : null}

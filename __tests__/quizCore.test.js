@@ -17,6 +17,7 @@ const {
   createSessionHistoryEntry,
   getUniqueUnseenTossups,
   prependHistoryEntry,
+  resolvePromptDisplayText,
   resolvePromptResult,
 } = require('../.test-build/utils/quizSession.js');
 const {
@@ -123,6 +124,12 @@ test('prompt resolution gives exactly one retry before converting prompt to reje
     action: 'record',
     result: { directive: 'accept' },
   });
+});
+
+test('prompt display text falls back when answer checker omits a directed prompt', () => {
+  assert.equal(resolvePromptDisplayText(' first name '), 'first name');
+  assert.equal(resolvePromptDisplayText(''), 'Be more specific');
+  assert.equal(resolvePromptDisplayText(undefined), 'Be more specific');
 });
 
 test('history helpers prepend entries and enforce the configured cap', () => {

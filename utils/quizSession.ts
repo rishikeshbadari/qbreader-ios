@@ -1,6 +1,7 @@
 import type { AnswerResult, SessionHistoryEntry, Tossup } from '../types/qb';
 
 export const MAX_HISTORY_ENTRIES = 200;
+export const DEFAULT_PROMPT_TEXT = 'Be more specific';
 
 export type QuestionFilters = {
   difficulties?: number[];
@@ -55,6 +56,11 @@ export function resolvePromptResult(
   }
 
   return { action: 'record', result };
+}
+
+export function resolvePromptDisplayText(directedPrompt?: string | null): string {
+  const trimmedPrompt = directedPrompt?.trim();
+  return trimmedPrompt ? trimmedPrompt : DEFAULT_PROMPT_TEXT;
 }
 
 export function prependHistoryEntry(

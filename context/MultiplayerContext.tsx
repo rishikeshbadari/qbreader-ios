@@ -34,6 +34,7 @@ import {
 } from '@/utils/revealTiming';
 import { getCoordinatorPlayerId } from '@/utils/multiplayerPlayers';
 import { buildActivePlayerRemovalUpdate } from '@/utils/multiplayerRemoval';
+import { resolvePromptDisplayText } from '@/utils/quizSession';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Utilities
@@ -1047,7 +1048,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     const isPrompted = promptedPlayerRef.current === buzz.playerId;
     if (result.directive === 'prompt' && !isPrompted) {
       promptedPlayerRef.current = buzz.playerId;
-      setPromptText(result.directedPrompt ?? 'Be more specific');
+      setPromptText(resolvePromptDisplayText(result.directedPrompt));
       setBuzzerAnswer('');
       const buzzDeadline = getCoordinatorNow() + SCORING.BUZZ_TIMEOUT_SECONDS * 1000;
       void send({
@@ -1690,7 +1691,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       case 'buzz:prompt': {
         // Player was prompted — give them another chance to answer
         clearPendingTyping();
-        setPromptText(event.directedPrompt ?? 'Be more specific');
+        setPromptText(resolvePromptDisplayText(event.directedPrompt));
         setBuzzerAnswer('');
         startBuzzTimer(event.playerId, event.buzzTimerEnd);
         break;

@@ -20,6 +20,7 @@ import {
   getUniqueUnseenTossups,
   MAX_HISTORY_ENTRIES,
   prependHistoryEntry,
+  resolvePromptDisplayText,
   resolvePromptResult,
 } from '@/utils/quizSession';
 
@@ -34,7 +35,7 @@ interface QuizSessionContextValue {
   history: SessionHistoryEntry[];
   lastResult?: AnswerResult;
   lastAnswer?: string;
-  promptInfo?: { directedPrompt?: string } | null;
+  promptInfo?: { directedPrompt: string } | null;
   loadNextQuestion: () => Promise<void>;
   judgeAnswer: (answer: string) => void;
   skipQuestion: () => void;
@@ -66,7 +67,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
   const [error, setError] = useState<string>();
   const [lastResult, setLastResult] = useState<AnswerResult>();
   const [lastAnswer, setLastAnswer] = useState<string>();
-  const [promptInfo, setPromptInfo] = useState<{ directedPrompt?: string } | null>(null);
+  const [promptInfo, setPromptInfo] = useState<{ directedPrompt: string } | null>(null);
   const promptedRef = useRef(false);
   const { selectedDifficulties, selectedCategories } = useSettings();
 
@@ -413,7 +414,9 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
       const promptResolution = resolvePromptResult(result, promptedRef.current);
       if (promptResolution.action === 'prompt') {
         promptedRef.current = true;
-        setPromptInfo({ directedPrompt: promptResolution.directedPrompt });
+        setPromptInfo({
+          directedPrompt: resolvePromptDisplayText(promptResolution.directedPrompt),
+        });
         return;
       }
       result = promptResolution.result;

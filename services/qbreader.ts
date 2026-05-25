@@ -339,7 +339,7 @@ const MOCK_FIXTURES: Tossup[] = [
     id: 'mock-1',
     questionHtml:
       'This German-born physicist published four landmark papers in 1905, including one introducing special relativity. For 10 points, name this author of E=mc^2.',
-    answerHtml: 'Albert <b>Einstein</b>',
+    answerHtml: '<b><u>Albert Einstein</u></b> [prompt on <u>Einstein</u> by asking "first name?"]',
     question:
       'This German-born physicist published four landmark papers in 1905, including one introducing special relativity. For 10 points, name this author of E=mc^2.',
     answer: 'Albert Einstein',
