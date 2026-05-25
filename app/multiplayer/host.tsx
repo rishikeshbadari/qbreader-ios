@@ -4,12 +4,14 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View }
 import Slider from '@react-native-community/slider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { DifficultySelector } from '@/components/quiz/DifficultySelector';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
+import { replaceDifficultySelection, toggleDifficultySelection } from '@/utils/settings';
 
 export default function HostGameScreen() {
   const insets = useSafeAreaInsets();
@@ -59,13 +61,13 @@ export default function HostGameScreen() {
   ]);
 
   const toggleDifficulty = (values: number[]) => {
-    const isSelected = values.every(v => selectedDifficulties.includes(v));
-    if (isSelected) {
-      const next = selectedDifficulties.filter(v => !values.includes(v));
-      setSelectedDifficulties(next.length > 0 ? next : values);
-    } else {
-      setSelectedDifficulties([...new Set([...selectedDifficulties, ...values])]);
-    }
+    setSelectedDifficulties(current => toggleDifficultySelection(current, values).selection);
+  };
+
+  const selectDifficulties = (values: number[]) => {
+    setSelectedDifficulties(current =>
+      replaceDifficultySelection(allDifficulties, values, current).selection
+    );
   };
 
   const toggleCategory = (categoryName: string) => {
@@ -131,34 +133,17 @@ export default function HostGameScreen() {
 
         {/* Difficulty */}
         <View style={[styles.section, { borderColor, backgroundColor: surfaceColor }]}>
-          <View style={styles.sectionHeader}>
-            <ThemedText type="subtitle" style={styles.sectionTitle}>Difficulty</ThemedText>
-            <Pressable onPress={() => setSelectedDifficulties(allDifficulties)} hitSlop={8}>
-              <ThemedText style={[styles.link, { color: brandColor }]}>Select all</ThemedText>
-            </Pressable>
-          </View>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>Difficulty</ThemedText>
           {loadingOptions ? (
             <ActivityIndicator />
           ) : (
-            <View style={styles.chipGrid}>
-              {availableDifficulties.map(option => {
-                const isSelected = option.values.every(v => selectedDifficulties.includes(v));
-                return (
-                  <Pressable
-                    key={option.label}
-                    onPress={() => toggleDifficulty(option.values)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${option.label} difficulty`}
-                    accessibilityState={{ selected: isSelected }}
-                    testID={`host-difficulty-${option.label}`}
-                    style={[styles.chip, { borderColor, backgroundColor: isSelected ? brandColor : 'transparent' }]}>
-                    <ThemedText style={[styles.chipLabel, { color: isSelected ? '#fff' : textColor }]}>
-                      {option.label}
-                    </ThemedText>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <DifficultySelector
+              selected={selectedDifficulties}
+              onToggle={toggleDifficulty}
+              onSelectValues={selectDifficulties}
+              showHeader={false}
+              testIDPrefix="host-difficulty"
+            />
           )}
         </View>
 

@@ -108,6 +108,26 @@ export function toggleDifficultySelection(
   };
 }
 
+export function replaceDifficultySelection(
+  availableValues: number[],
+  values: number[],
+  previousValues: number[] = [],
+): SelectionUpdate<number> {
+  const availableValueSet = new Set(availableValues);
+  const selection = Array.from(
+    new Set(values.filter((value) => availableValueSet.has(value)))
+  ).sort((left, right) => left - right);
+
+  if (selection.length === 0) {
+    return {
+      selection: previousValues.length > 0 ? previousValues : availableValues,
+      error: 'Select at least one difficulty.',
+    };
+  }
+
+  return { selection };
+}
+
 export function toggleCategorySelection(
   previousNames: string[],
   name: string,

@@ -16,6 +16,7 @@
     "types/**/*.ts",
     "services/qbreader.ts",
     "utils/directives.ts",
+    "utils/difficulty.ts",
     "utils/matchHistory.ts",
     "utils/multiplayerLobby.ts",
     "utils/multiplayerPlayers.ts",

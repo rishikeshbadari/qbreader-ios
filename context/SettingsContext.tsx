@@ -23,6 +23,7 @@ import {
   resolveCategorySelection,
   resolveDifficultySelection,
   resolveRevealSpeed,
+  replaceDifficultySelection,
   toggleCategorySelection,
   toggleDifficultySelection,
   type PersistedSettings,
@@ -38,6 +39,7 @@ type SettingsContextValue = {
   loadError?: string;
   refreshOptions: () => void;
   toggleDifficulty: (values: number[]) => void;
+  setDifficulties: (values: number[]) => void;
   toggleCategory: (name: string) => void;
   selectAllDifficulties: () => void;
   selectAllCategories: () => void;
@@ -203,6 +205,22 @@ export function SettingsProvider({ children }: PropsWithChildren) {
     [clearSelectionError, setSelectionError]
   );
 
+  const setDifficulties = useCallback(
+    (values: number[]) => {
+      setSelectedDifficulties((prev) => {
+        const availableValues = availableDifficulties.flatMap((option) => option.values);
+        const update = replaceDifficultySelection(availableValues, values, prev);
+        if (update.error) {
+          setSelectionError('difficulty', update.error);
+        } else {
+          clearSelectionError('difficulty');
+        }
+        return update.selection;
+      });
+    },
+    [availableDifficulties, clearSelectionError, setSelectionError]
+  );
+
   const toggleCategory = useCallback(
     (name: string) => {
       setSelectedCategories((prev) => {
@@ -245,6 +263,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
       loadError,
       refreshOptions: loadOptions,
       toggleDifficulty,
+      setDifficulties,
       toggleCategory,
       selectAllDifficulties,
       selectAllCategories,
@@ -263,6 +282,7 @@ export function SettingsProvider({ children }: PropsWithChildren) {
       selectedCategories,
       selectedDifficulties,
       selectionErrors,
+      setDifficulties,
       toggleCategory,
       toggleDifficulty,
       setRevealSpeed,

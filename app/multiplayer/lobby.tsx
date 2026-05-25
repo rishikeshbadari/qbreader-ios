@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 
 import { ChipSelector } from '@/components/quiz/ChipSelector';
+import { DifficultySelector } from '@/components/quiz/DifficultySelector';
 import { HostTransferModal } from '@/components/multiplayer/HostTransferModal';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -17,7 +18,9 @@ import { useThemeColor } from '@/hooks/useThemeColor';
 import { MAX_PLAYERS, type GameSettings } from '@/types/multiplayer';
 import { canStartMultiplayerGame, getHostTransferCandidates } from '@/utils/multiplayerLobby';
 import { getOnlinePlayers } from '@/utils/multiplayerPlayers';
+import { getDifficultySelectionLabel } from '@/utils/difficulty';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
+import { replaceDifficultySelection, toggleDifficultySelection } from '@/utils/settings';
 
 function sortedNumberKey(values: number[]): string {
   return [...values].sort((left, right) => left - right).join(',');
@@ -34,15 +37,6 @@ function areSettingsEqual(left: GameSettings | null | undefined, right: GameSett
     sortedStringKey(left.categories) === sortedStringKey(right.categories) &&
     left.revealSpeed === right.revealSpeed
   );
-}
-
-function getSelectedDifficultyGroupCount(settings: GameSettings | null, options: { values: number[] }[]): number {
-  if (!settings) return 0;
-  const selectedValues = new Set(settings.difficulties);
-  const selectedGroups = options.filter(option =>
-    option.values.every(value => selectedValues.has(value))
-  );
-  return selectedGroups.length || settings.difficulties.length;
 }
 
 export default function LobbyScreen() {
@@ -295,14 +289,16 @@ export default function LobbyScreen() {
 
   const toggleDifficulty = useCallback((values: number[]) => {
     setTempDifficulties(current => {
-      const isSelected = values.every(value => current.includes(value));
-      if (isSelected) {
-        const next = current.filter(value => !values.includes(value));
-        return next.length > 0 ? next : values;
-      }
-      return [...new Set([...current, ...values])];
+      return toggleDifficultySelection(current, values).selection;
     });
   }, []);
+
+  const selectDifficulties = useCallback((values: number[]) => {
+    const allDifficulties = availableDifficulties.flatMap(difficulty => difficulty.values);
+    setTempDifficulties(current =>
+      replaceDifficultySelection(allDifficulties, values, current).selection
+    );
+  }, [availableDifficulties]);
 
   const toggleCategory = useCallback((name: string) => {
     setTempCategories(current => {
@@ -320,7 +316,7 @@ export default function LobbyScreen() {
     : (settings?.revealSpeed ?? 0.5) >= 0.4 ? 'Moderate'
     : (settings?.revealSpeed ?? 0.5) >= 0.2 ? 'Slow'
     : 'Very slow';
-  const selectedDifficultyGroupCount = getSelectedDifficultyGroupCount(settings, availableDifficulties);
+  const selectedDifficultyLabel = getDifficultySelectionLabel(settings?.difficulties ?? []);
 
   // Countdown overlay
   if (countdownSeconds !== null) {
@@ -434,7 +430,7 @@ export default function LobbyScreen() {
             <View style={styles.settingsRow}>
               <ThemedText style={[styles.settingsLabel, { color: mutedColor }]}>Difficulties</ThemedText>
               <ThemedText style={styles.settingsValue} numberOfLines={1}>
-                {selectedDifficultyGroupCount} selected
+                {selectedDifficultyLabel}
               </ThemedText>
             </View>
             <View style={styles.settingsRow}>
@@ -527,13 +523,13 @@ export default function LobbyScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.modalContent}>
-              <ChipSelector
-                kind="difficulty"
-                options={availableDifficulties}
+              <DifficultySelector
                 selected={tempDifficulties}
                 onToggle={toggleDifficulty}
+                onSelectValues={selectDifficulties}
                 label="Difficulty"
                 disabled={isViewingSettings}
+                testIDPrefix="lobby-difficulty"
               />
               <ChipSelector
                 kind="category"

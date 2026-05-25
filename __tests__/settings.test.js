@@ -6,12 +6,19 @@ const {
   clampRevealSpeed,
   isPersistedSettings,
   parsePersistedSettings,
+  replaceDifficultySelection,
   resolveCategorySelection,
   resolveDifficultySelection,
   resolveRevealSpeed,
   toggleCategorySelection,
   toggleDifficultySelection,
 } = require('../.test-build/utils/settings.js');
+
+const {
+  areDifficultySelectionsEqual,
+  getDifficultySelectionLabel,
+  normalizeDifficultyValues,
+} = require('../.test-build/utils/difficulty.js');
 
 test('persisted settings parser accepts only the known settings shape', () => {
   assert.deepEqual(parsePersistedSettings('{"difficulties":[1,3],"categories":["History"],"revealSpeed":0.75}'), {
@@ -48,7 +55,7 @@ test('default selection resolution prefers valid persisted values, then previous
   assert.deepEqual(resolveCategorySelection(['History', 'Science'], [], undefined), ['History', 'Science']);
 });
 
-test('difficulty toggle cannot clear the final selected difficulty group', () => {
+test('difficulty toggle cannot clear the final selected level and supports granular levels', () => {
   assert.deepEqual(toggleDifficultySelection([1, 2, 3], [2, 3]), {
     selection: [1],
   });
@@ -59,6 +66,36 @@ test('difficulty toggle cannot clear the final selected difficulty group', () =>
   assert.deepEqual(toggleDifficultySelection([3], [1, 2]), {
     selection: [1, 2, 3],
   });
+  assert.deepEqual(toggleDifficultySelection([1, 2, 3], [2]), {
+    selection: [1, 3],
+  });
+  assert.deepEqual(toggleDifficultySelection([3], [7]), {
+    selection: [3, 7],
+  });
+});
+
+test('difficulty replacement normalizes preset and level selections', () => {
+  assert.deepEqual(replaceDifficultySelection([1, 2, 3, 4], [4, 2, 4], [1]), {
+    selection: [2, 4],
+  });
+  assert.deepEqual(replaceDifficultySelection([1, 2, 3], [99], [2]), {
+    selection: [2],
+    error: 'Select at least one difficulty.',
+  });
+  assert.deepEqual(replaceDifficultySelection([1, 2, 3], [], []), {
+    selection: [1, 2, 3],
+    error: 'Select at least one difficulty.',
+  });
+});
+
+test('difficulty labels describe granular selections', () => {
+  assert.deepEqual(normalizeDifficultyValues([3, 2, 2, 11, 1]), [1, 2, 3]);
+  assert.equal(areDifficultySelectionsEqual([1, 2, 2, 3], [3, 1, 2]), true);
+  assert.equal(getDifficultySelectionLabel([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), 'All levels');
+  assert.equal(getDifficultySelectionLabel([4]), 'Level 4');
+  assert.equal(getDifficultySelectionLabel([2, 3, 4, 5]), 'High School');
+  assert.equal(getDifficultySelectionLabel([3, 4, 5]), 'Levels 3-5');
+  assert.equal(getDifficultySelectionLabel([1, 3, 7]), 'Levels 1, 3, 7');
 });
 
 test('category toggle cannot clear the final category and sorts additions', () => {

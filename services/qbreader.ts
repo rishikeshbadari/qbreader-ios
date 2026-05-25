@@ -1,5 +1,6 @@
 import { stripHtmlTags } from '../utils/text';
 import type { Tossup } from '../types/qb';
+import { DIFFICULTY_PRESETS } from '../utils/difficulty';
 
 const API_BASE = 'https://www.qbreader.org/api';
 const DEFAULT_TOSSUP_COUNT = 1;
@@ -18,21 +19,6 @@ const FALLBACK_CATEGORIES = [
   'Geography',
   'Other Academic',
   'Pop Culture',
-];
-
-const DIFFICULTY_GROUPS = [
-  {
-    label: 'Middle School',
-    values: [1],
-  },
-  {
-    label: 'High School',
-    values: [2, 3, 4, 5],
-  },
-  {
-    label: 'College',
-    values: [6, 7, 8, 9, 10],
-  },
 ];
 
 interface RawPacket {
@@ -248,9 +234,9 @@ export async function fetchRandomTossups(
  * Return the difficulty groupings used by QBReader tossup filters.
  */
 export function getAvailableDifficulties(): DifficultyOption[] {
-  return DIFFICULTY_GROUPS.map((group) => ({
-    label: group.label,
-    values: group.values,
+  return DIFFICULTY_PRESETS.map((preset) => ({
+    label: preset.label,
+    values: [...preset.values],
   }));
 }
 

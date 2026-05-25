@@ -5,6 +5,7 @@ import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
+import { DifficultySelector } from '@/components/quiz/DifficultySelector';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
@@ -17,6 +18,7 @@ import {
   startPlaytestPeer,
   stopPlaytestPeer,
 } from '@/services/multiplayer/playtest-peer';
+import { getDifficultySelectionLabel } from '@/utils/difficulty';
 import { responsiveFont, scale, spacing, verticalScale, deviceMetrics } from '@/utils/responsive';
 
 // Dynamic spacing based on screen height
@@ -37,8 +39,8 @@ export default function SettingsScreen() {
     selectedCategories,
     revealSpeed,
     toggleDifficulty,
+    setDifficulties,
     toggleCategory,
-    selectAllDifficulties,
     selectAllCategories,
     setRevealSpeed,
     loadingOptions,
@@ -101,28 +103,6 @@ export default function SettingsScreen() {
             ? 'Slow'
             : 'Very slow';
 
-  const renderDifficultyChips = () =>
-    availableDifficulties.map((option) => {
-      const isSelected = option.values.every((value) => selectedDifficulties.includes(value));
-      return (
-        <Pressable
-          key={option.label}
-          onPress={() => toggleDifficulty(option.values)}
-          style={[
-            styles.chip,
-            {
-              borderColor,
-              backgroundColor: isSelected ? brandColor : 'transparent',
-            },
-          ]}>
-          <ThemedText
-            style={[styles.chipLabel, { color: isSelected ? '#fff' : textColor }]}>
-            {option.label}
-          </ThemedText>
-        </Pressable>
-      );
-    });
-
   const renderCategoryChips = () =>
     availableCategories.map((category) => {
       const isSelected = selectedCategories.includes(category.name);
@@ -148,6 +128,7 @@ export default function SettingsScreen() {
   const showDifficultyPlaceholder =
     loadingOptions && availableDifficulties.length === 0;
   const showCategoryPlaceholder = loadingOptions && availableCategories.length === 0;
+  const difficultySummary = getDifficultySelectionLabel(selectedDifficulties);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
@@ -209,16 +190,20 @@ export default function SettingsScreen() {
         <ThemedView lightColor={Colors.light.surface} darkColor={Colors.dark.surface} style={[styles.section, { borderColor }]}>
           <View style={styles.sectionHeader}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>Difficulty</ThemedText>
-            <Pressable onPress={selectAllDifficulties} hitSlop={8}>
-              <ThemedText style={[styles.actionLink, { color: brandColor }]}>
-                Select all
-              </ThemedText>
-            </Pressable>
+            <ThemedText style={[styles.summaryLabel, { color: mutedColor }]} numberOfLines={1}>
+              {difficultySummary}
+            </ThemedText>
           </View>
           {showDifficultyPlaceholder ? (
             <ActivityIndicator />
           ) : (
-            <View style={styles.chipGrid}>{renderDifficultyChips()}</View>
+            <DifficultySelector
+              selected={selectedDifficulties}
+              onToggle={toggleDifficulty}
+              onSelectValues={setDifficulties}
+              showHeader={false}
+              testIDPrefix="settings-difficulty"
+            />
           )}
           {selectionErrors.difficulty ? (
             <ThemedText style={[styles.errorMessage, { color: errorColor }]}>{selectionErrors.difficulty}</ThemedText>
@@ -318,6 +303,11 @@ const styles = StyleSheet.create({
   },
   speedLabel: {
     fontSize: responsiveFont(14),
+  },
+  summaryLabel: {
+    flexShrink: 1,
+    fontSize: responsiveFont(13),
+    fontWeight: '600',
   },
   slider: {
     marginHorizontal: -spacing.xs,

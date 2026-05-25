@@ -13,6 +13,7 @@ import Slider from '@react-native-community/slider';
 
 import { HostTransferModal } from '@/components/multiplayer/HostTransferModal';
 import { ChipSelector } from '@/components/quiz/ChipSelector';
+import { DifficultySelector } from '@/components/quiz/DifficultySelector';
 import { QuizGameLayout } from '@/components/quiz/QuizGameLayout';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -25,6 +26,7 @@ import { resetToMultiplayerHome } from '@/utils/navigation';
 import { getHostTransferCandidates } from '@/utils/multiplayerLobby';
 import { getOnlinePlayers } from '@/utils/multiplayerPlayers';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
+import { replaceDifficultySelection, toggleDifficultySelection } from '@/utils/settings';
 
 function sortedNumberKey(values: number[]): string {
   return [...values].sort((left, right) => left - right).join(',');
@@ -256,13 +258,14 @@ export default function MultiplayerGameScreen() {
   };
 
   const toggleDifficulty = (values: number[]) => {
-    const isSelected = values.every(v => tempDifficulties.includes(v));
-    if (isSelected) {
-      const next = tempDifficulties.filter(v => !values.includes(v));
-      setTempDifficulties(next.length > 0 ? next : values);
-    } else {
-      setTempDifficulties([...new Set([...tempDifficulties, ...values])]);
-    }
+    setTempDifficulties(current => toggleDifficultySelection(current, values).selection);
+  };
+
+  const selectDifficulties = (values: number[]) => {
+    const allDifficulties = availableDifficulties.flatMap(difficulty => difficulty.values);
+    setTempDifficulties(current =>
+      replaceDifficultySelection(allDifficulties, values, current).selection
+    );
   };
 
   const toggleCategory = (name: string) => {
@@ -481,12 +484,12 @@ export default function MultiplayerGameScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.modalContent}>
-              <ChipSelector
-                kind="difficulty"
-                options={availableDifficulties}
+              <DifficultySelector
                 selected={tempDifficulties}
                 onToggle={toggleDifficulty}
+                onSelectValues={selectDifficulties}
                 label="Difficulty"
+                testIDPrefix="game-difficulty"
               />
               <ChipSelector
                 kind="category"
