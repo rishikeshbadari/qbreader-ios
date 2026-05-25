@@ -1,5 +1,5 @@
-import { stripHtmlTags } from '@/utils/text';
-import type { Tossup } from '@/types/qb';
+import { stripHtmlTags } from '../utils/text';
+import type { Tossup } from '../types/qb';
 
 const API_BASE = 'https://www.qbreader.org/api';
 const DEFAULT_TOSSUP_COUNT = 1;
@@ -130,7 +130,7 @@ async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 /**
  * Build the QBReader random tossup URL with optional filters applied.
  */
-function buildRandomTossupUrl(count: number, filters?: RandomTossupFilters): string {
+export function buildRandomTossupUrl(count: number, filters?: RandomTossupFilters): string {
   const url = new URL(`${API_BASE}/random-tossup`);
   const normalizedCount = Number.isFinite(count)
     ? Math.min(MAX_TOSSUP_BATCH, Math.max(1, Math.floor(count)))
@@ -298,7 +298,7 @@ function cleanupPlainText(value: string): string {
   return value.replace(/\s*undefined\s*$/gi, '').trim();
 }
 
-function normalizeTossup(raw: RawTossup): Tossup {
+export function normalizeTossup(raw: RawTossup): Tossup {
   const id = resolveTossupId(raw);
   const questionHtml = raw.question ?? raw.question_sanitized ?? '';
   const answerHtml = raw.answer ?? raw.answer_sanitized ?? '';

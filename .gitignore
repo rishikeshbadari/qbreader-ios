@@ -36,6 +36,7 @@ supabase/.temp/
 
 # typescript
 *.tsbuildinfo
+.test-build/
 
 app-example
 

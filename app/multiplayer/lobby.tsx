@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 
 import { ChipSelector } from '@/components/quiz/ChipSelector';
-import { getHostTransferCandidates, HostTransferModal } from '@/components/multiplayer/HostTransferModal';
+import { HostTransferModal } from '@/components/multiplayer/HostTransferModal';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { GameCodeDisplay } from '@/components/multiplayer/GameCodeDisplay';
@@ -15,6 +15,8 @@ import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { MAX_PLAYERS, type GameSettings } from '@/types/multiplayer';
+import { canStartMultiplayerGame, getHostTransferCandidates } from '@/utils/multiplayerLobby';
+import { getOnlinePlayers } from '@/utils/multiplayerPlayers';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 function sortedNumberKey(values: number[]): string {
@@ -75,16 +77,20 @@ export default function LobbyScreen() {
   const textColor = useThemeColor({}, 'text');
 
   const isSelfReady = selfPlayer ? readyPlayers.includes(selfPlayer.id) : false;
-  const readyCount = readyPlayers.length;
-  const canStart = isHost && readyCount >= 2;
-  const hostHint = players.length < 2
+  const onlinePlayers = useMemo(
+    () => getOnlinePlayers(players, connectionStatuses),
+    [connectionStatuses, players],
+  );
+  const onlinePlayerCount = onlinePlayers.length;
+  const canStart = canStartMultiplayerGame(isHost, players, readyPlayers, connectionStatuses);
+  const hostHint = onlinePlayerCount < 2
     ? 'Waiting for more players to join...'
     : canStart
       ? 'Click Start Game above to begin!'
       : 'At least 2 players must be ready';
   const hostTransferCandidates = useMemo(
-    () => getHostTransferCandidates(players, allPlayers, selfPlayer?.id),
-    [players, allPlayers, selfPlayer?.id],
+    () => getHostTransferCandidates(players, allPlayers, selfPlayer?.id, connectionStatuses),
+    [players, allPlayers, selfPlayer?.id, connectionStatuses],
   );
   const defaultHostCandidateId = hostTransferCandidates[0]?.id ?? null;
   const [showHostTransferModal, setShowHostTransferModal] = useState(false);
@@ -346,7 +352,7 @@ export default function LobbyScreen() {
             <ThemedText style={styles.backLabel}>&#8249; Leave</ThemedText>
           </Pressable>
           <ThemedText style={[styles.playerCount, { color: mutedColor }]}>
-            {players.length}/{MAX_PLAYERS} players
+            {onlinePlayerCount}/{MAX_PLAYERS} online
           </ThemedText>
         </View>
         <ThemedText type="title">Lobby</ThemedText>

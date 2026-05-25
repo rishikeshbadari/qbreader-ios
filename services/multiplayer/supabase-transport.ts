@@ -2,6 +2,7 @@ import { createClient, type RealtimeChannel, type SupabaseClient } from '@supaba
 import Constants from 'expo-constants';
 
 import type { GameEvent } from '@/types/multiplayer';
+import { reconcilePresencePlayers, type PresenceState } from '@/utils/multiplayerPresence';
 import type { MultiplayerTransport, TransportCallbacks, DiscoveryCallbacks } from './transport';
 import type { ServerEventCallbacks } from './ws-transport';
 
@@ -37,6 +38,7 @@ export class SupabaseTransport implements MultiplayerTransport {
   private playerName: string | null = null;
   private hostToken: string | null = null;
   private subscriptionPromise: Promise<void> | null = null;
+  private presencePlayers = new Map<string, string>();
 
   constructor() {
     const url = Constants.expoConfig?.extra?.supabaseUrl;
@@ -161,6 +163,7 @@ export class SupabaseTransport implements MultiplayerTransport {
     this.serverCallbacks = undefined;
     this.playerId = null;
     this.playerName = null;
+    this.presencePlayers.clear();
   }
 
   async updateAdvertising(_playerNames: string): Promise<void> {
@@ -226,7 +229,29 @@ export class SupabaseTransport implements MultiplayerTransport {
     const channel = this.channel;
     this.channel = null;
     this.subscriptionPromise = null;
+    this.presencePlayers.clear();
     await this.supabase.removeChannel(channel);
+  }
+
+  private reconcilePresenceState(): void {
+    if (!this.channel) return;
+
+    const presenceState = this.channel.presenceState() as PresenceState;
+    const reconciliation = reconcilePresencePlayers(
+      this.presencePlayers,
+      presenceState,
+      this.playerId,
+    );
+
+    for (const player of reconciliation.joinedPlayers) {
+      this.serverCallbacks?.onPlayerJoined?.(player.id, player.name);
+    }
+
+    for (const playerId of reconciliation.leftPlayerIds) {
+      this.serverCallbacks?.onPlayerLeft?.(playerId, 'disconnected');
+    }
+
+    this.presencePlayers = reconciliation.currentPresencePlayers;
   }
 
   private subscribeToChannel(code: string): Promise<void> {
@@ -257,6 +282,10 @@ export class SupabaseTransport implements MultiplayerTransport {
       });
 
       // Presence: track player connections
+      this.channel.on('presence', { event: 'sync' }, () => {
+        this.reconcilePresenceState();
+      });
+
       this.channel.on('presence', { event: 'join' }, ({ newPresences }) => {
         for (const p of newPresences) {
           if (p.playerId && p.playerId !== this.playerId) {
@@ -265,12 +294,8 @@ export class SupabaseTransport implements MultiplayerTransport {
         }
       });
 
-      this.channel.on('presence', { event: 'leave' }, ({ leftPresences }) => {
-        for (const p of leftPresences) {
-          if (p.playerId && p.playerId !== this.playerId) {
-            this.serverCallbacks?.onPlayerLeft?.(p.playerId, 'disconnected');
-          }
-        }
+      this.channel.on('presence', { event: 'leave' }, () => {
+        this.reconcilePresenceState();
       });
 
       const timeout = setTimeout(() => {
@@ -288,6 +313,7 @@ export class SupabaseTransport implements MultiplayerTransport {
                 playerId: this.playerId,
                 playerName: this.playerName ?? 'Player',
               });
+              this.reconcilePresenceState();
             }
             settle(resolve);
           } catch (error) {

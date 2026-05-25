@@ -13,6 +13,7 @@ import checkAnswer from 'qb-answer-checker';
 
 import type {
   Buzz,
+  ConnectionStatus,
   GameEvent,
   GameSettings,
   GameSummary,
@@ -31,6 +32,8 @@ import {
   getRevealStartTimeForWordIndex,
   getVisibleWordCountForTime,
 } from '@/utils/revealTiming';
+import { getCoordinatorPlayerId } from '@/utils/multiplayerPlayers';
+import { buildActivePlayerRemovalUpdate } from '@/utils/multiplayerRemoval';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Utilities
@@ -116,7 +119,7 @@ type MultiplayerContextValue = {
   reviewPausedByPlayerId: string | null;
   reviewPausedByName: string | null;
   readyPlayers: string[];
-  connectionStatuses: Record<string, 'connected' | 'reconnecting' | 'disconnected'>;
+  connectionStatuses: Record<string, ConnectionStatus>;
   countdownSeconds: number | null;
   playerColors: Record<string, string>;
 
@@ -227,7 +230,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const [readyPlayers, setReadyPlayers] = useState<string[]>([]);
 
   // Connection status per player
-  const [connectionStatuses, setConnectionStatuses] = useState<Record<string, 'connected' | 'reconnecting' | 'disconnected'>>({});
+  const [connectionStatuses, setConnectionStatuses] = useState<Record<string, ConnectionStatus>>({});
 
   // Countdown state
   const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null);
@@ -255,11 +258,10 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     ? buzzQueue.findIndex(playerId => playerId === selfPlayer.id) + 1 || null
     : null;
 
-  const coordinatorId = useMemo(() => {
-    if (players.length === 0) return null;
-    const sorted = [...players].sort((a, b) => a.id.localeCompare(b.id));
-    return sorted[0].id;
-  }, [players]);
+  const coordinatorId = useMemo(
+    () => getCoordinatorPlayerId(players, connectionStatuses),
+    [connectionStatuses, players],
+  );
 
   const isCoordinatorValue = Boolean(selfPlayer && coordinatorId === selfPlayer.id);
 
@@ -278,14 +280,16 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     lockedOutPlayers, summary, hostId, scores, powerMarkWordIndex,
     status, sessionId, allPlayers, buzzWordIndex, gameCode, readyPlayers, revealStartTime,
     isBuzzLocked, buzzQueue, buzzTimerEnd, buzzerAnswer, buzzerResult, promptText,
-    reviewSecondsRemaining, reviewPausedByPlayerId, reviewPausedByName,
+    reviewSecondsRemaining, reviewPausedByPlayerId, reviewPausedByName, isLoading,
+    connectionStatuses,
   });
   stateRef.current = {
     players, settings, pendingSettings, currentQuestion, currentResult, currentBuzzer, selfPlayer,
     lockedOutPlayers, summary, hostId, scores, powerMarkWordIndex,
     status, sessionId, allPlayers, buzzWordIndex, gameCode, readyPlayers, revealStartTime,
     isBuzzLocked, buzzQueue, buzzTimerEnd, buzzerAnswer, buzzerResult, promptText,
-    reviewSecondsRemaining, reviewPausedByPlayerId, reviewPausedByName,
+    reviewSecondsRemaining, reviewPausedByPlayerId, reviewPausedByName, isLoading,
+    connectionStatuses,
   };
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -293,10 +297,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   // ───────────────────────────────────────────────────────────────────────────
 
   const isCoordinatorFn = useCallback(() => {
-    const { players, selfPlayer } = stateRef.current;
-    if (players.length === 0 || !selfPlayer) return false;
-    const sorted = [...players].sort((a, b) => a.id.localeCompare(b.id));
-    return sorted[0].id === selfPlayer.id;
+    const { players, selfPlayer, connectionStatuses } = stateRef.current;
+    if (!selfPlayer) return false;
+    return getCoordinatorPlayerId(players, connectionStatuses) === selfPlayer.id;
   }, []);
 
   const getCoordinatorNow = useCallback(() => Date.now() + coordinatorClockOffsetRef.current, []);
@@ -1160,6 +1163,64 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     }
   }, [send, addBuzzToSummary, applyResumedRevealStartTime, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearWrongAnswerTimer, getCoordinatorNow, getResumedRevealStartTime, grantNextQueuedBuzzer, startBuzzTimer, startReviewCountdown]);
 
+  const removeActivePlayer = useCallback((playerId: string) => {
+    const s = stateRef.current;
+    const removal = buildActivePlayerRemovalUpdate(playerId, {
+      players: s.players,
+      allPlayers: s.allPlayers,
+      readyPlayers: s.readyPlayers,
+      lockedOutPlayers: s.lockedOutPlayers,
+      hostId: s.hostId,
+      summary: s.summary,
+      currentBuzzerId: s.currentBuzzer?.id,
+      activeBuzzerId: activeBuzzerIdRef.current,
+    });
+
+    setConnectionStatuses(prev => ({ ...prev, [playerId]: 'disconnected' }));
+    setPlayers(removal.players);
+    setAllPlayers(removal.allPlayers);
+    setReadyPlayers(removal.readyPlayers);
+    setLockedOutPlayers(removal.lockedOutPlayers);
+    removeFromBuzzQueue(playerId);
+
+    if (removal.hostId !== s.hostId) {
+      setHostId(removal.hostId);
+    }
+
+    setSummary(removal.summary);
+
+    if (removal.shouldEndGame) {
+      setStatus('ended');
+    }
+
+    if (removal.wasActiveBuzzer) {
+      clearBuzzTimer();
+      clearWrongAnswerTimer();
+      clearPendingTyping();
+      setCurrentBuzzer(null);
+      activeBuzzerIdRef.current = null;
+      setBuzzerAnswer('');
+      setBuzzerResult(null);
+      if (promptedPlayerRef.current === playerId) {
+        promptedPlayerRef.current = null;
+        setPromptText(null);
+      }
+
+      if (s.currentQuestion && !s.currentResult) {
+        const resumedRevealStartTime = getResumedRevealStartTime();
+        applyResumedRevealStartTime(resumedRevealStartTime);
+        setIsBuzzLocked(false);
+      }
+    }
+  }, [
+    applyResumedRevealStartTime,
+    clearBuzzTimer,
+    clearPendingTyping,
+    clearWrongAnswerTimer,
+    getResumedRevealStartTime,
+    removeFromBuzzQueue,
+  ]);
+
   // ───────────────────────────────────────────────────────────────────────────
   // Event Handler
   // ───────────────────────────────────────────────────────────────────────────
@@ -1257,33 +1318,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       }
 
       case 'player:leave': {
-        // Rule 1: Remove from active players, but DON'T end the game unless empty
-        setPlayers(prev => {
-          const remaining = prev.filter(p => p.id !== event.playerId);
-          if (remaining.length === 0) {
-            setStatus('ended');
-            setSummary(s => s ? { ...s, endedAt: Date.now() } : s);
-          }
-          return remaining;
-        });
-
-        // Rule 3: Mark as 'left' in allPlayers and summary
-        setAllPlayers(prev => prev.map(p =>
-          p.id === event.playerId ? { ...p, status: 'left' as const } : p
-        ));
-        setSummary(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            players: prev.players.map(p =>
-              p.id === event.playerId ? { ...p, status: 'left' as const } : p
-            ),
-          };
-        });
-
-        // Remove from ready list
-        setReadyPlayers(prev => prev.filter(id => id !== event.playerId));
-        removeFromBuzzQueue(event.playerId);
+        removeActivePlayer(event.playerId);
         break;
       }
 
@@ -1311,21 +1346,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
           setForcedExitReason('kicked');
           return;
         }
-        setPlayers(prev => prev.filter(p => p.id !== event.playerId));
-        setAllPlayers(prev => prev.map(p =>
-          p.id === event.playerId ? { ...p, status: 'left' as const } : p
-        ));
-        setSummary(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            players: prev.players.map(p =>
-              p.id === event.playerId ? { ...p, status: 'left' as const } : p
-            ),
-          };
-        });
-        setReadyPlayers(prev => prev.filter(id => id !== event.playerId));
-        removeFromBuzzQueue(event.playerId);
+        removeActivePlayer(event.playerId);
         break;
       }
 
@@ -1798,6 +1819,15 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         const syncedPlayers = uniquePlayersById(s.players);
         setPlayers(syncedPlayers);
         setAllPlayers(prev => uniquePlayersById([...prev, ...syncedPlayers]));
+        setConnectionStatuses(prev => {
+          const next = { ...prev };
+          for (const player of syncedPlayers) {
+            if (player.status !== 'left') {
+              next[player.id] = 'connected';
+            }
+          }
+          return next;
+        });
         setHostId(s.hostId);
         setSettings(s.settings);
         setPendingSettings(s.pendingSettings ?? null);
@@ -1896,7 +1926,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         break;
       }
     }
-    }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, applyPendingSettingsForNextQuestion, applyResumedRevealStartTime, applyReviewPause, applyReviewStart, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearReviewCountdown, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping, fetchAndBroadcastQuestion, getCurrentRevealWordIndex, getResumedRevealStartTime, judgeAndBroadcastResult, pauseRevealForBuzz, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState, prefetchAndDistribute, coordinatorTimeToLocal, localTimeToCoordinator, applyGamePause, applyGameResume]);
+    }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, applyPendingSettingsForNextQuestion, applyResumedRevealStartTime, applyReviewPause, applyReviewStart, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearReviewCountdown, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping, fetchAndBroadcastQuestion, getCurrentRevealWordIndex, getResumedRevealStartTime, judgeAndBroadcastResult, pauseRevealForBuzz, removeActivePlayer, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState, prefetchAndDistribute, coordinatorTimeToLocal, localTimeToCoordinator, applyGamePause, applyGameResume]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Coordinator Transfer Detection (Rule 4)
@@ -1905,28 +1935,34 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
   const prevCoordinatorRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (players.length === 0) {
+    if (!coordinatorId) {
       prevCoordinatorRef.current = null;
       return;
     }
 
-    const sorted = [...players].sort((a, b) => a.id.localeCompare(b.id));
-    const newCoordinator = sorted[0].id;
-
-    if (prevCoordinatorRef.current && prevCoordinatorRef.current !== newCoordinator) {
+    if (prevCoordinatorRef.current && prevCoordinatorRef.current !== coordinatorId) {
       // Coordinator changed
-      if (selfPlayer && newCoordinator === selfPlayer.id) {
-        void send({ type: 'coordinator:change', newCoordinatorId: newCoordinator });
+      if (selfPlayer && coordinatorId === selfPlayer.id) {
+        void send({ type: 'coordinator:change', newCoordinatorId: coordinatorId });
 
-        // If mid-fetch, new coordinator should take over
-        if (isLoading && status === 'playing') {
+        // If the previous coordinator dropped while a transition was waiting on
+        // it, the newly elected coordinator needs to advance the game.
+        const s = stateRef.current;
+        const reviewIsWaitingForQuestion = Boolean(
+          s.status === 'playing' &&
+          s.currentQuestion &&
+          s.currentResult &&
+          reviewNextQuestionAtRef.current == null &&
+          reviewRemainingMsRef.current == null
+        );
+        if ((s.isLoading || reviewIsWaitingForQuestion) && s.status === 'playing') {
           void fetchAndBroadcastQuestion();
         }
       }
     }
 
-    prevCoordinatorRef.current = newCoordinator;
-  }, [players, selfPlayer, send, isLoading, status, fetchAndBroadcastQuestion]);
+    prevCoordinatorRef.current = coordinatorId;
+  }, [coordinatorId, selfPlayer, send, fetchAndBroadcastQuestion]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Server Event Callbacks (WebSocket transport specific)
@@ -1952,28 +1988,9 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         });
       },
       onPlayerLeft: (playerId, reason) => {
-        if (reason === 'disconnected') {
-          setConnectionStatuses(prev => ({ ...prev, [playerId]: 'disconnected' }));
-        } else {
-          // Player left or was kicked — remove immediately.
-          // This is the authoritative signal from the server; the game-level
-          // relay event may not arrive if the WS closed before it was flushed.
-          setPlayers(prev => prev.filter(p => p.id !== playerId));
-          setAllPlayers(prev => prev.map(p =>
-            p.id === playerId ? { ...p, status: 'left' as const } : p
-          ));
-          setReadyPlayers(prev => prev.filter(id => id !== playerId));
-          removeFromBuzzQueue(playerId);
-          setSummary(prev => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              players: prev.players.map(p =>
-                p.id === playerId ? { ...p, status: 'left' as const } : p
-              ),
-            };
-          });
-        }
+        // Presence disconnects are authoritative for active membership: closing
+        // the app kicks that player from the current game.
+        removeActivePlayer(playerId);
       },
       onPlayerReconnected: (playerId) => {
         setConnectionStatuses(prev => ({ ...prev, [playerId]: 'connected' }));
@@ -2001,7 +2018,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         console.warn('Room not found');
       },
     });
-  }, [handleEvent, removeFromBuzzQueue]);
+  }, [handleEvent, removeActivePlayer]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Public Actions

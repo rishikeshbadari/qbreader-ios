@@ -17,29 +17,6 @@ type Props = {
   onConfirm: () => void;
 };
 
-export function getHostTransferCandidates(
-  players: Player[],
-  allPlayers: Player[],
-  selfPlayerId?: string | null,
-): Player[] {
-  const activePlayersById = new Map(
-    players
-      .filter((player) => player.status !== 'left' && player.id !== selfPlayerId)
-      .map((player) => [player.id, player])
-  );
-
-  const orderedPlayers = allPlayers
-    .filter((player) => activePlayersById.has(player.id))
-    .map((player) => activePlayersById.get(player.id) ?? player);
-
-  const orderedIds = new Set(orderedPlayers.map((player) => player.id));
-  const missingPlayers = players.filter(
-    (player) => player.status !== 'left' && player.id !== selfPlayerId && !orderedIds.has(player.id)
-  );
-
-  return [...orderedPlayers, ...missingPlayers];
-}
-
 export function HostTransferModal({
   visible,
   players,

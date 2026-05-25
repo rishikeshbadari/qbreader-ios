@@ -17,6 +17,16 @@ import {
   type CategoryOption,
   type DifficultyOption,
 } from '@/services/qbreader';
+import {
+  clampRevealSpeed,
+  parsePersistedSettings,
+  resolveCategorySelection,
+  resolveDifficultySelection,
+  resolveRevealSpeed,
+  toggleCategorySelection,
+  toggleDifficultySelection,
+  type PersistedSettings,
+} from '@/utils/settings';
 
 type SettingsContextValue = {
   availableDifficulties: DifficultyOption[];
@@ -40,47 +50,6 @@ type SettingsContextValue = {
 
 const SettingsContext = createContext<SettingsContextValue | undefined>(undefined);
 const SETTINGS_STORAGE_KEY = 'quizbowl:settings';
-const DEFAULT_REVEAL_SPEED = 0.5;
-
-type PersistedSettings = {
-  difficulties?: number[];
-  categories?: string[];
-  revealSpeed?: number;
-};
-
-function clampRevealSpeed(value: number): number {
-  return Math.min(1, Math.max(0, value));
-}
-
-function isPersistedSettings(value: unknown): value is PersistedSettings {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const candidate = value as PersistedSettings;
-  const hasValidDifficulties =
-    candidate.difficulties === undefined ||
-    (
-      Array.isArray(candidate.difficulties) &&
-      candidate.difficulties.every((difficulty) => typeof difficulty === 'number')
-    );
-  const hasValidCategories =
-    candidate.categories === undefined ||
-    (
-      Array.isArray(candidate.categories) &&
-      candidate.categories.every((category) => typeof category === 'string')
-    );
-  const hasValidRevealSpeed =
-    candidate.revealSpeed === undefined ||
-    (typeof candidate.revealSpeed === 'number' && Number.isFinite(candidate.revealSpeed));
-
-  return hasValidDifficulties && hasValidCategories && hasValidRevealSpeed;
-}
-
-function parsePersistedSettings(stored: string): PersistedSettings {
-  const parsed = JSON.parse(stored) as unknown;
-  return isPersistedSettings(parsed) ? parsed : {};
-}
 
 export function SettingsProvider({ children }: PropsWithChildren) {
   const [availableDifficulties, setAvailableDifficulties] = useState<DifficultyOption[]>(
@@ -145,51 +114,19 @@ export function SettingsProvider({ children }: PropsWithChildren) {
       persisted?: { difficulties?: number[]; categories?: string[]; revealSpeed?: number }
     ) => {
       const flattenedDifficulties = difficulties.flatMap((option) => option.values);
-      const allDifficulties = () => flattenedDifficulties;
-      const allCategories = () => categories.map((option) => option.name);
+      const categoryNames = categories.map((option) => option.name);
 
       setSelectedDifficulties((prev) => {
-        const persistedValues = persisted?.difficulties?.filter((value) =>
-          flattenedDifficulties.includes(value)
-        );
-        if (persistedValues && persistedValues.length > 0) {
-          return persistedValues;
-        }
-
-        if (prev.length === 0) {
-          return allDifficulties();
-        }
-
-        const filtered = prev.filter((value) => flattenedDifficulties.includes(value));
-        return filtered.length > 0 ? filtered : allDifficulties();
+        return resolveDifficultySelection(flattenedDifficulties, prev, persisted?.difficulties);
       });
       clearSelectionError('difficulty');
 
       setSelectedCategories((prev) => {
-        const persistedValues = persisted?.categories?.filter((name) =>
-          categories.some((option) => option.name === name)
-        );
-        if (persistedValues && persistedValues.length > 0) {
-          return persistedValues;
-        }
-
-        if (prev.length === 0) {
-          return allCategories();
-        }
-
-        const filtered = prev.filter((name) =>
-          categories.some((option) => option.name === name)
-        );
-        return filtered.length > 0 ? filtered : allCategories();
+        return resolveCategorySelection(categoryNames, prev, persisted?.categories);
       });
       clearSelectionError('category');
 
-      const persistedSpeed = persisted?.revealSpeed;
-      const nextSpeed =
-        typeof persistedSpeed === 'number' && Number.isFinite(persistedSpeed)
-          ? clampRevealSpeed(persistedSpeed)
-          : DEFAULT_REVEAL_SPEED;
-      setRevealSpeedState(nextSpeed);
+      setRevealSpeedState(resolveRevealSpeed(persisted?.revealSpeed));
       setDefaultsReady(true);
     },
     [clearSelectionError]
@@ -253,22 +190,14 @@ export function SettingsProvider({ children }: PropsWithChildren) {
 
   const toggleDifficulty = useCallback(
     (values: number[]) => {
-      const valueSet = new Set(values);
       setSelectedDifficulties((prev) => {
-        const isFullySelected = values.every((value) => prev.includes(value));
-        if (isFullySelected) {
-          const remaining = prev.filter((value) => !valueSet.has(value));
-          if (remaining.length === 0) {
-            setSelectionError('difficulty', 'Select at least one difficulty.');
-            return prev;
-          }
+        const update = toggleDifficultySelection(prev, values);
+        if (update.error) {
+          setSelectionError('difficulty', update.error);
+        } else {
           clearSelectionError('difficulty');
-          return remaining;
         }
-
-        clearSelectionError('difficulty');
-        const merged = Array.from(new Set([...prev, ...values])).sort((a, b) => a - b);
-        return merged;
+        return update.selection;
       });
     },
     [clearSelectionError, setSelectionError]
@@ -277,16 +206,13 @@ export function SettingsProvider({ children }: PropsWithChildren) {
   const toggleCategory = useCallback(
     (name: string) => {
       setSelectedCategories((prev) => {
-        if (prev.includes(name)) {
-          if (prev.length === 1) {
-            setSelectionError('category', 'Select at least one category.');
-            return prev;
-          }
+        const update = toggleCategorySelection(prev, name);
+        if (update.error) {
+          setSelectionError('category', update.error);
+        } else {
           clearSelectionError('category');
-          return prev.filter((item) => item !== name);
         }
-        clearSelectionError('category');
-        return [...prev, name].sort((a, b) => a.localeCompare(b));
+        return update.selection;
       });
     },
     [clearSelectionError, setSelectionError]

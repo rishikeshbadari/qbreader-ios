@@ -13,8 +13,16 @@ import {
 import { fetchRandomTossups } from '@/services/qbreader';
 import { useSettings } from '@/hooks/useSettings';
 import type { AnswerResult, SessionHistoryEntry, Tossup } from '@/types/qb';
+import {
+  buildQuestionFilters,
+  buildQuestionFiltersKey,
+  createSessionHistoryEntry,
+  getUniqueUnseenTossups,
+  MAX_HISTORY_ENTRIES,
+  prependHistoryEntry,
+  resolvePromptResult,
+} from '@/utils/quizSession';
 
-const MAX_HISTORY_ENTRIES = 200;
 const PREFETCH_TARGET = 10;
 const PREFETCH_LOW_WATER = 3;
 const SETTINGS_PREFETCH_DEBOUNCE_MS = 300;
@@ -68,19 +76,14 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
    * Build request filters from current user selections, omitting empty arrays.
    */
   const buildFilters = useCallback(() => {
-    return {
-      difficulties: selectedDifficulties.length > 0 ? selectedDifficulties : undefined,
-      categories: selectedCategories.length > 0 ? selectedCategories : undefined,
-    };
+    return buildQuestionFilters(selectedDifficulties, selectedCategories);
   }, [selectedCategories, selectedDifficulties]);
 
   const nextQuestionsRef = useRef<Tossup[]>([]);
   const seenQuestionIdsRef = useRef<Set<string>>(new Set());
 
   const buildFiltersKey = useCallback((filters: ReturnType<typeof buildFilters>) => {
-    const difficulties = filters.difficulties ? [...filters.difficulties].sort((a, b) => a - b) : [];
-    const categories = filters.categories ? [...filters.categories].sort() : [];
-    return `${difficulties.join(',')}|${categories.join(',')}`;
+    return buildQuestionFiltersKey(filters);
   }, []);
 
   const isLatestFiltersKey = useCallback((key: string) => {
@@ -92,14 +95,7 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
       return [];
     }
 
-    const uniqueQuestions: Tossup[] = [];
-    for (const question of incoming) {
-      if (seenQuestionIdsRef.current.has(question.id)) {
-        continue;
-      }
-      seenQuestionIdsRef.current.add(question.id);
-      uniqueQuestions.push(question);
-    }
+    const uniqueQuestions = getUniqueUnseenTossups(incoming, seenQuestionIdsRef.current);
 
     if (uniqueQuestions.length === 0) {
       return [];
@@ -414,17 +410,13 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
         }
       }
 
-      // Handle prompts: give the player one more chance to be more specific
-      if (result.directive === 'prompt' && !promptedRef.current) {
+      const promptResolution = resolvePromptResult(result, promptedRef.current);
+      if (promptResolution.action === 'prompt') {
         promptedRef.current = true;
-        setPromptInfo({ directedPrompt: result.directedPrompt });
+        setPromptInfo({ directedPrompt: promptResolution.directedPrompt });
         return;
       }
-
-      // Second prompt → treat as reject
-      if (result.directive === 'prompt') {
-        result = { ...result, directive: 'reject' };
-      }
+      result = promptResolution.result;
 
       promptedRef.current = false;
       setPromptInfo(null);
@@ -432,17 +424,12 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
       setLastResult(result);
       setLastAnswer(sanitizedAnswer);
       setHistory((prev) => {
-        const next = [
-          {
-            id: `${currentQuestion.id}-${Date.now()}`,
-            tossup: currentQuestion,
-            userAnswer: sanitizedAnswer,
-            result,
-            timestamp: Date.now(),
-          },
-          ...prev,
-        ];
-        return next.length > MAX_HISTORY_ENTRIES ? next.slice(0, MAX_HISTORY_ENTRIES) : next;
+        const timestamp = Date.now();
+        return prependHistoryEntry(
+          prev,
+          createSessionHistoryEntry(currentQuestion, sanitizedAnswer, result, timestamp),
+          MAX_HISTORY_ENTRIES,
+        );
       });
     },
     [currentQuestion]
@@ -461,17 +448,11 @@ export function QuizSessionProvider({ children }: PropsWithChildren) {
 
     const timestamp = Date.now();
     setHistory((prev) => {
-      const next = [
-        {
-          id: `${currentQuestion.id}-${timestamp}-skip`,
-          tossup: currentQuestion,
-          userAnswer: '',
-          result: { directive: 'skip' },
-          timestamp,
-        },
-        ...prev,
-      ];
-      return next.length > MAX_HISTORY_ENTRIES ? next.slice(0, MAX_HISTORY_ENTRIES) : next;
+      return prependHistoryEntry(
+        prev,
+        createSessionHistoryEntry(currentQuestion, '', { directive: 'skip' }, timestamp, 'skip'),
+        MAX_HISTORY_ENTRIES,
+      );
     });
     setLastAnswer('');
   }, [currentQuestion]);

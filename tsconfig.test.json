@@ -1,0 +1,34 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": ".test-build",
+    "rootDir": ".",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "jsx": "react-jsx",
+    "noEmit": false,
+    "incremental": false,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": [
+    "types/**/*.ts",
+    "services/qbreader.ts",
+    "utils/directives.ts",
+    "utils/matchHistory.ts",
+    "utils/multiplayerLobby.ts",
+    "utils/multiplayerPlayers.ts",
+    "utils/multiplayerPresence.ts",
+    "utils/multiplayerRemoval.ts",
+    "utils/multiplayerSummary.ts",
+    "utils/quizSession.ts",
+    "utils/revealTiming.ts",
+    "utils/sessionStats.ts",
+    "utils/settings.ts",
+    "utils/text.ts"
+  ],
+  "exclude": [
+    "server"
+  ]
+}

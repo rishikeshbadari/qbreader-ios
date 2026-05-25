@@ -11,7 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 
-import { getHostTransferCandidates, HostTransferModal } from '@/components/multiplayer/HostTransferModal';
+import { HostTransferModal } from '@/components/multiplayer/HostTransferModal';
 import { ChipSelector } from '@/components/quiz/ChipSelector';
 import { QuizGameLayout } from '@/components/quiz/QuizGameLayout';
 import { ThemedText } from '@/components/ThemedText';
@@ -22,6 +22,8 @@ import { useThemeColor } from '@/hooks/useThemeColor';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import type { GameSettings } from '@/types/multiplayer';
 import { resetToMultiplayerHome } from '@/utils/navigation';
+import { getHostTransferCandidates } from '@/utils/multiplayerLobby';
+import { getOnlinePlayers } from '@/utils/multiplayerPlayers';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
 function sortedNumberKey(values: number[]): string {
@@ -80,6 +82,7 @@ export default function MultiplayerGameScreen() {
     reviewSecondsRemaining,
     reviewPausedByPlayerId,
     reviewPausedByName,
+    connectionStatuses,
     noBuzzTimeout,
     pauseGame,
     resumeGame,
@@ -126,6 +129,10 @@ export default function MultiplayerGameScreen() {
   const isPlaying = status === 'playing';
   const selfScore = selfPlayer ? (scores[selfPlayer.id] ?? 0) : 0;
   const effectiveSettings = pendingSettings ?? settings;
+  const onlinePlayerCount = useMemo(
+    () => getOnlinePlayers(players, connectionStatuses).length,
+    [connectionStatuses, players],
+  );
   const hasActiveUnresolvedQuestion = Boolean(status !== 'ended' && currentQuestion && !currentResult);
   const settingsLockedForActiveBuzz = Boolean(
     isPlaying &&
@@ -134,8 +141,8 @@ export default function MultiplayerGameScreen() {
     (isBuzzLocked || currentBuzzer)
   );
   const hostTransferCandidates = useMemo(
-    () => getHostTransferCandidates(players, allPlayers, selfPlayer?.id),
-    [players, allPlayers, selfPlayer?.id],
+    () => getHostTransferCandidates(players, allPlayers, selfPlayer?.id, connectionStatuses),
+    [players, allPlayers, selfPlayer?.id, connectionStatuses],
   );
   const defaultHostCandidateId = hostTransferCandidates[0]?.id ?? null;
 
@@ -343,7 +350,7 @@ export default function MultiplayerGameScreen() {
             <View style={styles.hudTopRow}>
               <View style={styles.hudStats}>
                 <ThemedText style={[styles.hudStat, { color: mutedColor }]}>
-                  {players.length} player{players.length !== 1 ? 's' : ''}
+                  {onlinePlayerCount} online
                 </ThemedText>
                 <View style={[styles.hudDivider, { backgroundColor: borderColor }]} />
                 <ThemedText

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/ThemedText';
 import { ConnectionDot } from './ConnectionDot';
 import { useThemeColor } from '@/hooks/useThemeColor';
+import type { ConnectionStatus } from '@/types/multiplayer';
 import { responsiveFont, scale, spacing, verticalScale, MIN_TOUCH_TARGET } from '@/utils/responsive';
 
 type PlayerListItemProps = {
@@ -11,7 +12,7 @@ type PlayerListItemProps = {
   isHost: boolean;
   isSelf: boolean;
   isReady: boolean;
-  connectionStatus?: 'connected' | 'reconnecting' | 'disconnected';
+  connectionStatus?: ConnectionStatus;
   canKick: boolean;
   onKick?: () => void;
 };

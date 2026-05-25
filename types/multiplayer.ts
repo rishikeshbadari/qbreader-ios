@@ -32,6 +32,8 @@ export const PLAYER_COLORS = [
   '#6366F1', // violet
 ] as const;
 
+export type ConnectionStatus = 'connected' | 'reconnecting' | 'disconnected';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Core Types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,7 +44,7 @@ export type Player = {
   name: string;
   status?: 'active' | 'left';
   ready?: boolean;
-  connectionStatus?: 'connected' | 'reconnecting' | 'disconnected';
+  connectionStatus?: ConnectionStatus;
   color?: string;
   isHost?: boolean;
 };

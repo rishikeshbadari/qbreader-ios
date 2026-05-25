@@ -7,76 +7,16 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { useThemeColor } from '@/hooks/useThemeColor';
-import { SCORING, type GameSummary } from '@/types/multiplayer';
-import type { AnswerResult } from '@/types/qb';
-import { normalizeDirective } from '@/utils/directives';
 import { saveMatchToHistory } from '@/app/multiplayer/history';
+import { normalizeDirective } from '@/utils/directives';
+import {
+  buzzLabel,
+  buzzPointDelta,
+  computeMultiplayerScores,
+} from '@/utils/multiplayerSummary';
 import { responsiveFont, scale, spacing, verticalScale, MIN_TOUCH_TARGET } from '@/utils/responsive';
 
 const SUMMARY_EXIT_RESET_DELAY_MS = 450;
-
-type PlayerScore = {
-  id: string;
-  name: string;
-  status: 'active' | 'left';
-  correct: number;
-  incorrect: number;
-  powers: number;
-  points: number;
-  accuracy: number;
-};
-
-function computeScores(summary: GameSummary): PlayerScore[] {
-  const scores = new Map<string, { correct: number; incorrect: number; powers: number; points: number }>();
-  for (const player of summary.players) {
-    scores.set(player.id, { correct: 0, incorrect: 0, powers: 0, points: 0 });
-  }
-  for (const record of summary.questions) {
-    for (const buzz of record.buzzes) {
-      const entry = scores.get(buzz.playerId);
-      if (!entry) continue;
-      const directive = normalizeDirective(buzz.result);
-      if (directive === 'accept') {
-        entry.correct += 1;
-        if (buzz.isPower) {
-          entry.powers += 1;
-          entry.points += SCORING.POWER;
-        } else {
-          entry.points += SCORING.CORRECT;
-        }
-      } else if (directive === 'incorrect') {
-        entry.incorrect += 1;
-        entry.points += SCORING.INCORRECT;
-      }
-    }
-  }
-  return summary.players
-    .map((p) => {
-      const s = scores.get(p.id)!;
-      const total = s.correct + s.incorrect;
-      return {
-        id: p.id,
-        name: p.name,
-        status: (p.status ?? 'active') as 'active' | 'left',
-        ...s,
-        accuracy: total > 0 ? s.correct / total : 0,
-      };
-    })
-    .sort((a, b) => b.points - a.points);
-}
-
-function buzzPointDelta(buzz: { result?: AnswerResult; isPower?: boolean }): number {
-  const directive = normalizeDirective(buzz.result);
-  if (directive === 'accept') return buzz.isPower ? SCORING.POWER : SCORING.CORRECT;
-  if (directive === 'incorrect') return SCORING.INCORRECT;
-  return 0;
-}
-
-function buzzLabel(buzz: { isPower?: boolean; timedOut?: boolean }): string | null {
-  if (buzz.isPower) return 'POWER';
-  if (buzz.timedOut) return 'TIMEOUT';
-  return null;
-}
 
 export default function MultiplayerSummaryScreen() {
   const insets = useSafeAreaInsets();
@@ -99,7 +39,7 @@ export default function MultiplayerSummaryScreen() {
     setTimeout(completeForcedExit, SUMMARY_EXIT_RESET_DELAY_MS);
   };
   const playerNames = summary?.players.map(p => p.name).join(', ') ?? '';
-  const scores = useMemo(() => summary ? computeScores(summary) : [], [summary]);
+  const scores = useMemo(() => summary ? computeMultiplayerScores(summary) : [], [summary]);
 
   // Auto-save to match history
   const savedRef = useRef(false);
