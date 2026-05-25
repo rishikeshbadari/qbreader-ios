@@ -54,6 +54,7 @@ export function QuestionCard({
   footerAccessoryReservedHeight,
 }: Props) {
   const colorScheme = useColorScheme();
+  const themeColors = Colors[colorScheme ?? 'light'];
   const { revealSpeed } = useSettings();
   const effectiveRevealSpeed =
     typeof revealSpeedOverride === 'number' ? revealSpeedOverride : revealSpeed;
@@ -84,18 +85,23 @@ export function QuestionCard({
   const isRevealRunning = shouldAnimateQuestion && revealActive;
   const canShowRevealButton =
     shouldAnimateQuestion && revealActive && showRevealButton && !isBuzzed && !questionOnly;
+  const questionInfoRows = getQuestionInfoRows(tossup);
+  const canShowQuestionInfo = showAnswer && questionInfoRows.length > 0;
   const footerReservedHeight = footerAccessory
     ? Math.max(footerAccessoryReservedHeight ?? 0, verticalScale(64))
     : 0;
+  const questionInfoToggleReservedHeight = canShowQuestionInfo ? verticalScale(58) : 0;
   const baseScrollPaddingBottom = canShowRevealButton
     ? verticalScale(56)
     : questionOnly
       ? spacing.xl
       : 0;
-  const scrollPaddingBottom = Math.max(baseScrollPaddingBottom, footerReservedHeight);
+  const scrollPaddingBottom = Math.max(
+    baseScrollPaddingBottom,
+    footerReservedHeight,
+    isQuestionInfoOpen ? 0 : questionInfoToggleReservedHeight,
+  );
   const shouldAutoScrollQuestion = showAnswer || isRevealRunning || hasRevealedFullQuestion;
-  const questionInfoRows = getQuestionInfoRows(tossup);
-  const canShowQuestionInfo = showAnswer && questionInfoRows.length > 0;
 
   const scrollQuestionToEnd = useCallback((animated: boolean) => {
     requestAnimationFrame(() => {
@@ -359,7 +365,10 @@ export function QuestionCard({
       testID="question-more-info-button"
       style={({ pressed }) => [
         styles.moreInfoButton,
-        { borderColor, opacity: pressed ? 0.72 : 1 },
+        {
+          borderColor,
+          backgroundColor: pressed ? themeColors.surfaceSecondary : themeColors.surface,
+        },
       ]}>
       <MaterialIcons
         name={isQuestionInfoOpen ? 'expand-more' : 'info-outline'}
@@ -375,9 +384,10 @@ export function QuestionCard({
     <View
       style={[
         styles.questionInfoPanel,
+        styles.questionInfoPanelAboveToggle,
         {
           borderColor,
-          backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.035)',
+          backgroundColor: themeColors.surfaceSecondary,
         },
       ]}>
       {questionInfoRows.map((row) => (
@@ -464,12 +474,9 @@ export function QuestionCard({
                     </ThemedText>
                   </View>
                 ) : null}
-                <View style={styles.correctAnswerHeader}>
-                  <ThemedText style={[styles.submittedAnswerLabel, { color: mutedColor }]}>
-                    Correct answer
-                  </ThemedText>
-                  {questionInfoToggle}
-                </View>
+                <ThemedText style={[styles.submittedAnswerLabel, { color: mutedColor }]}>
+                  Correct answer
+                </ThemedText>
                 <ThemedText style={styles.questionOnlyAnswerText}>
                   {tossup?.answer}
                 </ThemedText>
@@ -503,12 +510,9 @@ export function QuestionCard({
                     </ThemedText>
                   </View>
                 ) : null}
-                <View style={styles.correctAnswerHeader}>
-                  <ThemedText style={[styles.submittedAnswerLabel, { color: mutedColor }]}>
-                    Correct answer
-                  </ThemedText>
-                  {questionInfoToggle}
-                </View>
+                <ThemedText style={[styles.submittedAnswerLabel, { color: mutedColor }]}>
+                  Correct answer
+                </ThemedText>
                 <ThemedText type="defaultSemiBold">
                   {tossup?.answer}
                 </ThemedText>
@@ -532,6 +536,11 @@ export function QuestionCard({
             ]}>
             <ThemedText style={[styles.revealLabel, { color: brandColor }]}>Show full question</ThemedText>
           </Pressable>
+        ) : null}
+        {questionInfoToggle ? (
+          <View pointerEvents="box-none" style={styles.questionInfoToggleDock}>
+            {questionInfoToggle}
+          </View>
         ) : null}
         {footerAccessory ? (
           <View pointerEvents="box-none" style={styles.footerAccessory}>
@@ -667,16 +676,11 @@ const styles = StyleSheet.create({
   answerResult: {
     fontSize: responsiveFont(16),
   },
-  correctAnswerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
   moreInfoButton: {
-    minHeight: verticalScale(34),
+    minHeight: MIN_TOUCH_TARGET,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 999,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.md,
     paddingVertical: verticalScale(5),
     flexDirection: 'row',
     alignItems: 'center',
@@ -686,6 +690,15 @@ const styles = StyleSheet.create({
   moreInfoButtonText: {
     fontSize: responsiveFont(13),
   },
+  questionInfoToggleDock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    zIndex: 2,
+    elevation: 2,
+  },
   questionInfoPanel: {
     alignSelf: 'stretch',
     marginTop: spacing.sm,
@@ -693,6 +706,9 @@ const styles = StyleSheet.create({
     borderRadius: scale(12),
     padding: spacing.md,
     gap: spacing.sm,
+  },
+  questionInfoPanelAboveToggle: {
+    marginBottom: verticalScale(58),
   },
   questionInfoRow: {
     flexDirection: 'row',
