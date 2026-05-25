@@ -1,4 +1,5 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, LayoutAnimation, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { ThemedText } from '@/components/ThemedText';
@@ -9,6 +10,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import type { AnswerResult, Tossup } from '@/types/qb';
 import { directiveLabel, normalizeDirective } from '@/utils/directives';
+import { getQuestionInfoRows } from '@/utils/questionInfo';
 import { getRevealIntervalMs, getVisibleWordCountForTime } from '@/utils/revealTiming';
 import { MIN_TOUCH_TARGET, responsiveFont, scale, spacing, verticalScale } from '@/utils/responsive';
 
@@ -67,6 +69,7 @@ export function QuestionCard({
   const onWordIndexChangeRef = useRef(onWordIndexChange);
   const questionScrollRef = useRef<ScrollView | null>(null);
   const [hasRevealedFullQuestion, setHasRevealedFullQuestion] = useState(false);
+  const [isQuestionInfoOpen, setIsQuestionInfoOpen] = useState(false);
   const wordsRef = useRef<string[]>([]);
   const revealIndexRef = useRef(0);
   const revealStartTimeRef = useRef(revealStartTime);
@@ -91,6 +94,8 @@ export function QuestionCard({
       : 0;
   const scrollPaddingBottom = Math.max(baseScrollPaddingBottom, footerReservedHeight);
   const shouldAutoScrollQuestion = showAnswer || isRevealRunning || hasRevealedFullQuestion;
+  const questionInfoRows = getQuestionInfoRows(tossup);
+  const canShowQuestionInfo = showAnswer && questionInfoRows.length > 0;
 
   const scrollQuestionToEnd = useCallback((animated: boolean) => {
     requestAnimationFrame(() => {
@@ -105,6 +110,7 @@ export function QuestionCard({
 
   useEffect(() => {
     setHasRevealedFullQuestion(false);
+    setIsQuestionInfoOpen(false);
   }, [tossup?.id, tossup?.question]);
 
   useEffect(() => {
@@ -331,6 +337,11 @@ export function QuestionCard({
     setDisplayedQuestion(tossup.question);
   };
 
+  const toggleQuestionInfo = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setIsQuestionInfoOpen((current) => !current);
+  };
+
   const answerResultColor = getResultColor(result, successColor, warningColor, errorColor, brandColor);
   const answerResultLabel = getResultLabel(result);
   const trimmedSubmittedAnswer = submittedAnswer?.trim();
@@ -338,6 +349,49 @@ export function QuestionCard({
     showAnswer &&
     normalizeDirective(result) === 'incorrect' &&
     Boolean(trimmedSubmittedAnswer);
+  const questionInfoToggle = canShowQuestionInfo ? (
+    <Pressable
+      onPress={toggleQuestionInfo}
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={isQuestionInfoOpen ? 'Hide question information' : 'Show question information'}
+      accessibilityState={{ expanded: isQuestionInfoOpen }}
+      testID="question-more-info-button"
+      style={({ pressed }) => [
+        styles.moreInfoButton,
+        { borderColor, opacity: pressed ? 0.72 : 1 },
+      ]}>
+      <MaterialIcons
+        name={isQuestionInfoOpen ? 'expand-more' : 'info-outline'}
+        size={scale(15)}
+        color={brandColor}
+      />
+      <ThemedText type="defaultSemiBold" style={[styles.moreInfoButtonText, { color: brandColor }]}>
+        {isQuestionInfoOpen ? 'Hide Info' : 'More Info'}
+      </ThemedText>
+    </Pressable>
+  ) : null;
+  const questionInfoPanel = canShowQuestionInfo && isQuestionInfoOpen ? (
+    <View
+      style={[
+        styles.questionInfoPanel,
+        {
+          borderColor,
+          backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.035)',
+        },
+      ]}>
+      {questionInfoRows.map((row) => (
+        <View key={row.label} style={styles.questionInfoRow}>
+          <ThemedText style={[styles.questionInfoLabel, { color: mutedColor }]}>
+            {row.label}
+          </ThemedText>
+          <ThemedText type="defaultSemiBold" style={styles.questionInfoValue}>
+            {row.value}
+          </ThemedText>
+        </View>
+      ))}
+    </View>
+  ) : null;
 
   return (
     <ThemedView
@@ -410,14 +464,16 @@ export function QuestionCard({
                     </ThemedText>
                   </View>
                 ) : null}
-                {shouldShowSubmittedAnswer ? (
+                <View style={styles.correctAnswerHeader}>
                   <ThemedText style={[styles.submittedAnswerLabel, { color: mutedColor }]}>
                     Correct answer
                   </ThemedText>
-                ) : null}
+                  {questionInfoToggle}
+                </View>
                 <ThemedText style={styles.questionOnlyAnswerText}>
                   {tossup?.answer}
                 </ThemedText>
+                {questionInfoPanel}
               </View>
             ) : null}
             {showAnswer && !questionOnly ? (
@@ -447,12 +503,16 @@ export function QuestionCard({
                     </ThemedText>
                   </View>
                 ) : null}
-                {shouldShowSubmittedAnswer ? (
+                <View style={styles.correctAnswerHeader}>
                   <ThemedText style={[styles.submittedAnswerLabel, { color: mutedColor }]}>
                     Correct answer
                   </ThemedText>
-                ) : null}
-                <ThemedText type="defaultSemiBold">{tossup?.answer}</ThemedText>
+                  {questionInfoToggle}
+                </View>
+                <ThemedText type="defaultSemiBold">
+                  {tossup?.answer}
+                </ThemedText>
+                {questionInfoPanel}
               </View>
             ) : null}
           </ScrollView>
@@ -606,6 +666,52 @@ const styles = StyleSheet.create({
   },
   answerResult: {
     fontSize: responsiveFont(16),
+  },
+  correctAnswerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  moreInfoButton: {
+    minHeight: verticalScale(34),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: verticalScale(5),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: scale(3),
+  },
+  moreInfoButtonText: {
+    fontSize: responsiveFont(13),
+  },
+  questionInfoPanel: {
+    alignSelf: 'stretch',
+    marginTop: spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: scale(12),
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  questionInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  questionInfoLabel: {
+    flexShrink: 0,
+    fontSize: responsiveFont(12),
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  questionInfoValue: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: responsiveFont(14),
+    lineHeight: verticalScale(20),
+    textAlign: 'right',
   },
   error: {},
   revealButton: {

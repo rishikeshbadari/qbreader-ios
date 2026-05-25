@@ -23,6 +23,7 @@
     "utils/multiplayerPresence.ts",
     "utils/multiplayerRemoval.ts",
     "utils/multiplayerSummary.ts",
+    "utils/questionInfo.ts",
     "utils/quizSession.ts",
     "utils/revealTiming.ts",
     "utils/sessionStats.ts",

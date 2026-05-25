@@ -34,9 +34,10 @@ test('QBReader tossup normalizer prefers sanitized text and cleans bad suffixes'
     category: { name: 'History' },
     subcategory: { name: 'European History' },
     difficulty: '3',
-    set: { name: 'Set Name' },
-    packet: { number: 4 },
+    set: { name: 'Set Name', year: 2024 },
+    packet: { name: 'Packet A', number: 4 },
     number: 7,
+    updatedAt: '2023-04-09T06:00:05.554Z',
   });
 
   assert.deepEqual(tossup, {
@@ -49,8 +50,11 @@ test('QBReader tossup normalizer prefers sanitized text and cleans bad suffixes'
     subcategory: 'European History',
     difficulty: '3',
     setName: 'Set Name',
+    setYear: 2024,
+    packetName: 'Packet A',
     packetNumber: 4,
     questionNumber: 7,
+    updatedAt: '2023-04-09T06:00:05.554Z',
   });
 });
 
@@ -71,6 +75,7 @@ test('QBReader tossup normalizer falls back to stripped HTML and string packet m
   assert.equal(tossup.category, 'Science');
   assert.equal(tossup.subcategory, 'Physics');
   assert.equal(tossup.setName, 'String Set');
+  assert.equal(tossup.packetName, '12');
   assert.equal(tossup.packetNumber, 12);
 });
 

@@ -12,6 +12,9 @@
       "distribution": "internal"
     },
     "production": {
+      "env": {
+        "EXPO_PUBLIC_USE_PAIRED_LOOPBACK": "0"
+      },
       "ios": {
         "distribution": "store"
       },

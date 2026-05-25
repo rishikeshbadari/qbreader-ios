@@ -21,8 +21,11 @@ export interface Tossup {
   subcategory?: string;
   difficulty?: string | number;
   setName?: string;
+  setYear?: number;
+  packetName?: string;
   packetNumber?: number;
   questionNumber?: number;
+  updatedAt?: string;
 }
 
 export interface SessionHistoryEntry {

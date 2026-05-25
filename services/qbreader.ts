@@ -22,11 +22,13 @@ const FALLBACK_CATEGORIES = [
 ];
 
 interface RawPacket {
+  name?: string;
   number?: number;
 }
 
 interface RawSet {
   name?: string;
+  year?: number;
 }
 
 interface RawTossup {
@@ -42,6 +44,7 @@ interface RawTossup {
   set?: RawSet | string;
   packet?: RawPacket | string;
   number?: number;
+  updatedAt?: string;
 }
 
 interface RandomTossupResponse {
@@ -289,6 +292,8 @@ export function normalizeTossup(raw: RawTossup): Tossup {
   const questionHtml = raw.question ?? raw.question_sanitized ?? '';
   const answerHtml = raw.answer ?? raw.answer_sanitized ?? '';
   const setName = normalizeSetName(raw.set);
+  const setYear = normalizeSetYear(raw.set);
+  const packetName = normalizePacketName(raw.packet);
   const packetNumber = normalizePacketNumber(raw.packet);
 
   const questionPlainText = cleanupPlainText(
@@ -308,8 +313,11 @@ export function normalizeTossup(raw: RawTossup): Tossup {
     subcategory: normalizeLabel(raw.subcategory),
     difficulty: raw.difficulty,
     setName,
+    setYear,
+    packetName,
     packetNumber,
     questionNumber: raw.number,
+    updatedAt: raw.updatedAt,
   };
 }
 
@@ -319,6 +327,15 @@ function resolveTossupId(raw: RawTossup): string {
 
 function normalizeSetName(set?: RawSet | string): string | undefined {
   return typeof set === 'string' ? set : set?.name ?? undefined;
+}
+
+function normalizeSetYear(set?: RawSet | string): number | undefined {
+  const rawYear = typeof set === 'string' ? undefined : set?.year;
+  return typeof rawYear === 'number' && Number.isFinite(rawYear) ? rawYear : undefined;
+}
+
+function normalizePacketName(packet?: RawPacket | string): string | undefined {
+  return typeof packet === 'string' ? packet : packet?.name ?? undefined;
 }
 
 function normalizePacketNumber(packet?: RawPacket | string): number | undefined {

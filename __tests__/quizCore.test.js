@@ -25,6 +25,9 @@ const {
   calculateSessionStats,
 } = require('../.test-build/utils/sessionStats.js');
 const {
+  getQuestionInfoRows,
+} = require('../.test-build/utils/questionInfo.js');
+const {
   stripHtmlTags,
   truncateText,
 } = require('../.test-build/utils/text.js');
@@ -137,6 +140,32 @@ test('prompt hint formatting adds the visible Prompt label once', () => {
   assert.equal(formatPromptHint('Be more specific'), 'Prompt: Be more specific');
   assert.equal(formatPromptHint(' Prompt: Be more specific '), 'Prompt: Be more specific');
   assert.equal(formatPromptHint(undefined), null);
+});
+
+test('question info rows expose API metadata for revealed answers', () => {
+  assert.deepEqual(getQuestionInfoRows({
+    ...tossup('q1'),
+    setName: '2012 Penn-ance',
+    setYear: 2012,
+    packetName: '07',
+    packetNumber: 7,
+    questionNumber: 19,
+    difficulty: 8,
+    category: 'History',
+    subcategory: 'World History',
+    updatedAt: '2023-04-09T06:00:05.554Z',
+  }), [
+    { label: 'Set', value: '2012 Penn-ance' },
+    { label: 'Year', value: '2012' },
+    { label: 'Packet', value: '07' },
+    { label: 'Question', value: '19' },
+    { label: 'Difficulty', value: '8' },
+    { label: 'Category', value: 'History' },
+    { label: 'Subcategory', value: 'World History' },
+    { label: 'Updated', value: '2023-04-09' },
+  ]);
+
+  assert.deepEqual(getQuestionInfoRows(tossup('q2')), []);
 });
 
 test('history helpers prepend entries and enforce the configured cap', () => {
