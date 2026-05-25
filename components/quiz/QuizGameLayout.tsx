@@ -59,6 +59,8 @@ type Props = {
   onRetry?: () => void;
   onBuzzTyping?: (text: string) => void;
   onWordIndexChange?: (wordIndex: number) => void;
+  questionFooterAccessory?: ReactNode;
+  questionFooterAccessoryReservedHeight?: number;
 
   // Optional overlay
   overlay?: React.ReactNode;
@@ -115,6 +117,8 @@ export function QuizGameLayout({
   onRetry,
   onBuzzTyping,
   onWordIndexChange,
+  questionFooterAccessory,
+  questionFooterAccessoryReservedHeight,
   overlay,
   topAccessory,
   questionOnly = false,
@@ -492,6 +496,8 @@ export function QuizGameLayout({
               showRevealButton={false}
               showMeta={!questionOnly}
               questionOnly={questionOnly}
+              footerAccessory={questionFooterAccessory}
+              footerAccessoryReservedHeight={questionFooterAccessoryReservedHeight}
               onWordIndexChange={handleWordIndexChange}
               onFullQuestionRevealChange={setRevealComplete}
             />

@@ -1,5 +1,5 @@
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -28,6 +28,8 @@ interface Props {
   showRevealButton?: boolean;
   showMeta?: boolean;
   questionOnly?: boolean;
+  footerAccessory?: ReactNode;
+  footerAccessoryReservedHeight?: number;
 }
 
 export function QuestionCard({
@@ -46,6 +48,8 @@ export function QuestionCard({
   showRevealButton = true,
   showMeta = true,
   questionOnly = false,
+  footerAccessory,
+  footerAccessoryReservedHeight,
 }: Props) {
   const colorScheme = useColorScheme();
   const { revealSpeed } = useSettings();
@@ -77,11 +81,15 @@ export function QuestionCard({
   const isRevealRunning = shouldAnimateQuestion && revealActive;
   const canShowRevealButton =
     shouldAnimateQuestion && revealActive && showRevealButton && !isBuzzed && !questionOnly;
-  const scrollPaddingBottom = canShowRevealButton
+  const footerReservedHeight = footerAccessory
+    ? Math.max(footerAccessoryReservedHeight ?? 0, verticalScale(64))
+    : 0;
+  const baseScrollPaddingBottom = canShowRevealButton
     ? verticalScale(56)
     : questionOnly
       ? spacing.xl
       : 0;
+  const scrollPaddingBottom = Math.max(baseScrollPaddingBottom, footerReservedHeight);
   const shouldAutoScrollQuestion = showAnswer || isRevealRunning || hasRevealedFullQuestion;
 
   const scrollQuestionToEnd = useCallback((animated: boolean) => {
@@ -465,6 +473,11 @@ export function QuestionCard({
             <ThemedText style={[styles.revealLabel, { color: brandColor }]}>Show full question</ThemedText>
           </Pressable>
         ) : null}
+        {footerAccessory ? (
+          <View pointerEvents="box-none" style={styles.footerAccessory}>
+            {footerAccessory}
+          </View>
+        ) : null}
       </View>
     </ThemedView>
   );
@@ -611,6 +624,13 @@ const styles = StyleSheet.create({
     fontSize: responsiveFont(12),
     textTransform: 'uppercase',
     letterSpacing: 0.8,
+  },
+  footerAccessory: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: verticalScale(6),
+    alignItems: 'center',
   },
 });
 
