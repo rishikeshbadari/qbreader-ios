@@ -9,12 +9,12 @@ export const DIFFICULTY_VALUES = Array.from({ length: 10 }, (_, index) => index 
 export const DIFFICULTY_PRESETS: DifficultyPreset[] = [
   {
     label: 'Middle School',
-    shortLabel: 'Middle',
+    shortLabel: 'Middle School',
     values: [1],
   },
   {
     label: 'High School',
-    shortLabel: 'High',
+    shortLabel: 'High School',
     values: [2, 3, 4, 5],
   },
   {

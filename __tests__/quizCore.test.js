@@ -127,15 +127,15 @@ test('prompt resolution gives exactly one retry before converting prompt to reje
   });
 });
 
-test('prompt display text falls back when answer checker omits a directed prompt', () => {
-  assert.equal(resolvePromptDisplayText(' first name '), 'first name');
+test('prompt display text stays generic even when answer checker returns a directed prompt', () => {
+  assert.equal(resolvePromptDisplayText(' first name '), 'Be more specific');
   assert.equal(resolvePromptDisplayText(''), 'Be more specific');
   assert.equal(resolvePromptDisplayText(undefined), 'Be more specific');
 });
 
 test('prompt hint formatting adds the visible Prompt label once', () => {
-  assert.equal(formatPromptHint('first name?'), 'Prompt: first name?');
-  assert.equal(formatPromptHint(' Prompt: first name? '), 'Prompt: first name?');
+  assert.equal(formatPromptHint('Be more specific'), 'Prompt: Be more specific');
+  assert.equal(formatPromptHint(' Prompt: Be more specific '), 'Prompt: Be more specific');
   assert.equal(formatPromptHint(undefined), null);
 });
 

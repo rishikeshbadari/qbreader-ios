@@ -15,6 +15,7 @@ const {
 } = require('../.test-build/utils/settings.js');
 
 const {
+  DIFFICULTY_PRESETS,
   areDifficultySelectionsEqual,
   getDifficultySelectionLabel,
   normalizeDifficultyValues,
@@ -91,6 +92,11 @@ test('difficulty replacement normalizes preset and level selections', () => {
 test('difficulty labels describe granular selections', () => {
   assert.deepEqual(normalizeDifficultyValues([3, 2, 2, 11, 1]), [1, 2, 3]);
   assert.equal(areDifficultySelectionsEqual([1, 2, 2, 3], [3, 1, 2]), true);
+  assert.deepEqual(DIFFICULTY_PRESETS.map((preset) => preset.shortLabel), [
+    'Middle School',
+    'High School',
+    'College',
+  ]);
   assert.equal(getDifficultySelectionLabel([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), 'All levels');
   assert.equal(getDifficultySelectionLabel([4]), 'Level 4');
   assert.equal(getDifficultySelectionLabel([2, 3, 4, 5]), 'High School');

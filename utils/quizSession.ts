@@ -58,9 +58,8 @@ export function resolvePromptResult(
   return { action: 'record', result };
 }
 
-export function resolvePromptDisplayText(directedPrompt?: string | null): string {
-  const trimmedPrompt = directedPrompt?.trim();
-  return trimmedPrompt ? trimmedPrompt : DEFAULT_PROMPT_TEXT;
+export function resolvePromptDisplayText(_directedPrompt?: string | null): string {
+  return DEFAULT_PROMPT_TEXT;
 }
 
 export function formatPromptHint(promptText?: string | null): string | null {

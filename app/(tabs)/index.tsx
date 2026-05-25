@@ -198,7 +198,7 @@ export default function PlayScreen() {
         questionFooterAccessoryReservedHeight={spacing.xl * 2}
         questionOnly
         showMainActionLabel={false}
-        showSupplementalText={false}
+        showSupplementalText={Boolean(promptInfo?.directedPrompt)}
         bottomPadding={FLOATING_TAB_BAR_SURFACE_HEIGHT + spacing.md}
         parentHandlesBottomSafeArea
         overlay={

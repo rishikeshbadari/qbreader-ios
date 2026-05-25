@@ -82,7 +82,7 @@ Single-player:
 - Changing categories or difficulties aborts stale fetches, clears current question/result/prompt state, and warms a new queue after a short debounce.
 - Empty answers are recorded as `skip`.
 - The small `SKIP` button exists only in single-player. It records the current tossup as skipped and immediately starts loading the next question. It is guarded by `skipInFlightRef` plus a 350 ms cooldown so spamming cannot launch parallel transitions.
-- Prompt directives allow exactly one retry. The visible input hint should be `Prompt: <hint>`; if `qb-answer-checker` omits a hint, use `Be more specific`.
+- Prompt directives allow exactly one retry. The visible input hint should stay generic: `Prompt: Be more specific`, even if `qb-answer-checker` returns a directed prompt.
 - History is newest-first and capped by `MAX_HISTORY_ENTRIES = 200`.
 
 Settings:
@@ -123,7 +123,7 @@ When adding behavior, push pure rules into `utils/` where possible and add local
 ## Simulator / Playtest Notes
 
 - Use `EXPO_PUBLIC_QBREADER_MOCK=1` for deterministic tossups.
-- The first mock tossup is Einstein. Answer `Einstein` should prompt with `Prompt: first name?`; retry `Albert Einstein` should accept.
+- The first mock tossup is Einstein. Answer `Einstein` should prompt with `Prompt: Be more specific`; retry `Albert Einstein` should accept.
 - Reliable mock categories include `History`, `Literature`, and `Science`.
 - Player names for multiplayer fuzz: `Alice`, `Bob`, `Charlie`.
 - Simulator keyboard automation may not always trigger React Native `TextInput` submit exactly like a real user. Verify UI and logs, but do not contort app code just to satisfy a brittle automation path.
