@@ -251,6 +251,10 @@ export class SupabaseTransport implements MultiplayerTransport {
       this.serverCallbacks?.onPlayerLeft?.(playerId, 'disconnected');
     }
 
+    this.serverCallbacks?.onPresenceSync?.(
+      Array.from(reconciliation.currentPresencePlayers, ([id, name]) => ({ id, name })),
+    );
+
     this.presencePlayers = reconciliation.currentPresencePlayers;
   }
 

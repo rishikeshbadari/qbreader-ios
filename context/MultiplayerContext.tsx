@@ -33,6 +33,11 @@ import {
   getVisibleWordCountForTime,
 } from '@/utils/revealTiming';
 import { getCoordinatorPlayerId } from '@/utils/multiplayerPlayers';
+import {
+  buildAuthoritativePlayersUpdate,
+  uniquePlayersById,
+  type AuthoritativePlayersUpdate,
+} from '@/utils/multiplayerMembership';
 import { buildActivePlayerRemovalUpdate } from '@/utils/multiplayerRemoval';
 import { resolvePromptDisplayText } from '@/utils/quizSession';
 
@@ -66,20 +71,6 @@ function findPowerMarkWordIndex(questionText: string): number | undefined {
 
 function buildSettingsKey(settings: GameSettings): string {
   return `${[...settings.difficulties].sort((a, b) => a - b).join(',')}_${[...settings.categories].sort().join(',')}_${settings.revealSpeed}`;
-}
-
-function uniquePlayersById(players: Player[]): Player[] {
-  const order: string[] = [];
-  const byId = new Map<string, Player>();
-
-  for (const player of players) {
-    if (!byId.has(player.id)) {
-      order.push(player.id);
-    }
-    byId.set(player.id, { ...byId.get(player.id), ...player });
-  }
-
-  return order.map(id => byId.get(id)!);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1164,6 +1155,106 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     }
   }, [send, addBuzzToSummary, applyResumedRevealStartTime, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearWrongAnswerTimer, getCoordinatorNow, getResumedRevealStartTime, grantNextQueuedBuzzer, startBuzzTimer, startReviewCountdown]);
 
+  const cleanupRemovedActiveBuzzer = useCallback((removedPlayerIds: string[]) => {
+    const removedPlayerIdSet = new Set(removedPlayerIds);
+    const s = stateRef.current;
+
+    clearBuzzTimer();
+    clearWrongAnswerTimer();
+    clearPendingTyping();
+    setCurrentBuzzer(null);
+    activeBuzzerIdRef.current = null;
+    setBuzzerAnswer('');
+    setBuzzerResult(null);
+    if (promptedPlayerRef.current && removedPlayerIdSet.has(promptedPlayerRef.current)) {
+      promptedPlayerRef.current = null;
+      setPromptText(null);
+    }
+
+    if (s.currentQuestion && !s.currentResult) {
+      const resumedRevealStartTime = getResumedRevealStartTime();
+      applyResumedRevealStartTime(resumedRevealStartTime);
+      setIsBuzzLocked(false);
+    }
+  }, [
+    applyResumedRevealStartTime,
+    clearBuzzTimer,
+    clearPendingTyping,
+    clearWrongAnswerTimer,
+    getResumedRevealStartTime,
+  ]);
+
+  const applyAuthoritativePlayersUpdate = useCallback((update: AuthoritativePlayersUpdate) => {
+    setPlayers(update.players);
+    setAllPlayers(update.allPlayers);
+    setReadyPlayers(update.readyPlayers);
+    setLockedOutPlayers(update.lockedOutPlayers);
+    setConnectionStatuses(update.connectionStatuses);
+    setHostId(update.hostId);
+    setSummary(update.summary);
+    setScores(prev => {
+      let changed = false;
+      const next = { ...prev };
+      for (const player of update.players) {
+        if (!(player.id in next)) {
+          next[player.id] = 0;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+
+    for (const playerId of update.removedPlayerIds) {
+      removeFromBuzzQueue(playerId);
+    }
+
+    if (update.shouldEndGame) {
+      setStatus('ended');
+    }
+
+    if (update.wasActiveBuzzer) {
+      cleanupRemovedActiveBuzzer(update.removedPlayerIds);
+    }
+  }, [cleanupRemovedActiveBuzzer, removeFromBuzzQueue]);
+
+  const buildCurrentAuthoritativePlayersUpdate = useCallback((
+    authoritativePlayers: Player[],
+    hostIdOverride?: string | null,
+  ) => {
+    const s = stateRef.current;
+    return buildAuthoritativePlayersUpdate(authoritativePlayers, {
+      players: s.players,
+      allPlayers: s.allPlayers,
+      readyPlayers: s.readyPlayers,
+      lockedOutPlayers: s.lockedOutPlayers,
+      connectionStatuses: s.connectionStatuses,
+      hostId: s.hostId,
+      summary: s.summary,
+      currentBuzzerId: s.currentBuzzer?.id,
+      activeBuzzerId: activeBuzzerIdRef.current,
+    }, hostIdOverride ?? s.hostId);
+  }, []);
+
+  const syncPlayersIfAuthoritative = useCallback((
+    nextPlayers: Player[],
+    nextHostId: string | null,
+    nextConnectionStatuses: Record<string, ConnectionStatus>,
+  ) => {
+    const s = stateRef.current;
+    const selfId = s.selfPlayer?.id;
+    if (!selfId || !nextHostId || nextPlayers.length === 0) return;
+
+    const nextCoordinatorId = getCoordinatorPlayerId(nextPlayers, nextConnectionStatuses);
+    const shouldSync =
+      s.status === 'lobby'
+        ? selfId === nextHostId
+        : selfId === nextCoordinatorId;
+
+    if (shouldSync) {
+      void send({ type: 'players:sync', players: nextPlayers, hostId: nextHostId });
+    }
+  }, [send]);
+
   const removeActivePlayer = useCallback((playerId: string) => {
     const s = stateRef.current;
     const removal = buildActivePlayerRemovalUpdate(playerId, {
@@ -1195,31 +1286,18 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
     }
 
     if (removal.wasActiveBuzzer) {
-      clearBuzzTimer();
-      clearWrongAnswerTimer();
-      clearPendingTyping();
-      setCurrentBuzzer(null);
-      activeBuzzerIdRef.current = null;
-      setBuzzerAnswer('');
-      setBuzzerResult(null);
-      if (promptedPlayerRef.current === playerId) {
-        promptedPlayerRef.current = null;
-        setPromptText(null);
-      }
-
-      if (s.currentQuestion && !s.currentResult) {
-        const resumedRevealStartTime = getResumedRevealStartTime();
-        applyResumedRevealStartTime(resumedRevealStartTime);
-        setIsBuzzLocked(false);
-      }
+      cleanupRemovedActiveBuzzer([playerId]);
     }
+
+    syncPlayersIfAuthoritative(
+      removal.players,
+      removal.hostId,
+      { ...s.connectionStatuses, [playerId]: 'disconnected' },
+    );
   }, [
-    applyResumedRevealStartTime,
-    clearBuzzTimer,
-    clearPendingTyping,
-    clearWrongAnswerTimer,
-    getResumedRevealStartTime,
+    cleanupRemovedActiveBuzzer,
     removeFromBuzzQueue,
+    syncPlayersIfAuthoritative,
   ]);
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -1299,6 +1377,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
             reviewRemainingMs: reviewRemainingMsRef.current,
           };
           void send({ type: 'state:sync', targetPlayerId: event.player.id, state: syncPayload });
+          void send({ type: 'players:sync', players: syncedPlayers, hostId: s.hostId! });
         }
         const preloaded = preloadedQuestionRef.current;
         if (
@@ -1324,8 +1403,12 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
       }
 
       case 'players:sync': {
-        setPlayers(prev => uniquePlayersById([...prev, ...event.players]));
-        if (event.hostId) setHostId(event.hostId);
+        const localSelfPlayer = stateRef.current.selfPlayer;
+        if (localSelfPlayer && !event.players.some(player => player.id === localSelfPlayer.id)) {
+          break;
+        }
+        const update = buildCurrentAuthoritativePlayersUpdate(event.players, event.hostId);
+        applyAuthoritativePlayersUpdate(update);
         break;
       }
 
@@ -1927,7 +2010,7 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         break;
       }
     }
-    }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, applyPendingSettingsForNextQuestion, applyResumedRevealStartTime, applyReviewPause, applyReviewStart, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearReviewCountdown, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping, fetchAndBroadcastQuestion, getCurrentRevealWordIndex, getResumedRevealStartTime, judgeAndBroadcastResult, pauseRevealForBuzz, removeActivePlayer, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState, prefetchAndDistribute, coordinatorTimeToLocal, localTimeToCoordinator, applyGamePause, applyGameResume]);
+    }, [isCoordinatorFn, send, addQuestionToSummary, addBuzzToSummary, applyAuthoritativePlayersUpdate, applyPendingSettingsForNextQuestion, applyResumedRevealStartTime, applyReviewPause, applyReviewStart, buildCurrentAuthoritativePlayersUpdate, clearBuzzTimer, clearBuzzQueue, clearRevealPause, clearReviewCountdown, clearWrongAnswerTimer, clearCountdownTimer, clearPendingTyping, fetchAndBroadcastQuestion, getCurrentRevealWordIndex, getResumedRevealStartTime, judgeAndBroadcastResult, pauseRevealForBuzz, removeActivePlayer, removeFromBuzzQueue, handleBuzzRequest, startBuzzTimer, resetState, prefetchAndDistribute, coordinatorTimeToLocal, localTimeToCoordinator, applyGamePause, applyGameResume]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Coordinator Transfer Detection (Rule 4)
@@ -1993,6 +2076,20 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         // the app kicks that player from the current game.
         removeActivePlayer(playerId);
       },
+      onPresenceSync: (presencePlayers) => {
+        const { selfPlayer, status, hostId } = stateRef.current;
+        if (!selfPlayer || !hostId || status === 'idle' || status === 'ended') return;
+        if (!presencePlayers.some(player => player.id === selfPlayer.id)) return;
+
+        const activePresencePlayers = presencePlayers.map(player => ({
+          id: player.id,
+          name: player.name || 'Player',
+          status: 'active' as const,
+        }));
+        const update = buildCurrentAuthoritativePlayersUpdate(activePresencePlayers);
+        applyAuthoritativePlayersUpdate(update);
+        syncPlayersIfAuthoritative(update.players, update.hostId, update.connectionStatuses);
+      },
       onPlayerReconnected: (playerId) => {
         setConnectionStatuses(prev => ({ ...prev, [playerId]: 'connected' }));
       },
@@ -2019,7 +2116,13 @@ export function MultiplayerProvider({ children }: PropsWithChildren) {
         console.warn('Room not found');
       },
     });
-  }, [handleEvent, removeActivePlayer]);
+  }, [
+    applyAuthoritativePlayersUpdate,
+    buildCurrentAuthoritativePlayersUpdate,
+    handleEvent,
+    removeActivePlayer,
+    syncPlayersIfAuthoritative,
+  ]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Public Actions

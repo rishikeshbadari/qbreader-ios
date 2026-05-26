@@ -9,6 +9,7 @@ export type ServerEventCallbacks = {
   onRoomJoined?: (code: string, players: { id: string; name: string; isHost: boolean }[]) => void;
   onPlayerJoined?: (playerId: string, playerName: string) => void;
   onPlayerLeft?: (playerId: string, reason: 'left' | 'kicked' | 'disconnected') => void;
+  onPresenceSync?: (players: { id: string; name: string }[]) => void;
   onPlayerReconnected?: (playerId: string) => void;
   onHostTransferred?: (newHostId: string) => void;
   onConnectionStatusChange?: (status: 'connected' | 'reconnecting' | 'disconnected') => void;

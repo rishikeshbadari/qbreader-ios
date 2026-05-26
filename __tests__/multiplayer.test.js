@@ -15,6 +15,10 @@ const {
   reconcilePresencePlayers,
 } = require('../.test-build/utils/multiplayerPresence.js');
 const {
+  buildAuthoritativePlayersUpdate,
+  uniquePlayersById,
+} = require('../.test-build/utils/multiplayerMembership.js');
+const {
   buildActivePlayerRemovalUpdate,
 } = require('../.test-build/utils/multiplayerRemoval.js');
 const {
@@ -159,6 +163,83 @@ test('presence reconciliation emits leaves from full sync state but ignores self
 
   assert.deepEqual(reconciliation.joinedPlayers, []);
   assert.deepEqual(reconciliation.leftPlayerIds, ['stale']);
+});
+
+test('unique player merge preserves first-seen order while refreshing player data', () => {
+  assert.deepEqual(
+    uniquePlayersById([
+      player('host', 'Old Host'),
+      player('peer', 'Peer'),
+      player('host', 'New Host'),
+    ]),
+    [
+      player('host', 'New Host'),
+      player('peer', 'Peer'),
+    ],
+  );
+});
+
+test('authoritative player sync removes stale old host when that user rejoins with a new id', () => {
+  const oldHost = player('host-old', 'Rohan');
+  const peer = player('peer', 'Alice');
+  const other = player('other', 'Bob');
+  const rejoinedHost = player('host-new', 'Rohan');
+
+  const update = buildAuthoritativePlayersUpdate(
+    [peer, other, rejoinedHost],
+    {
+      players: [oldHost, peer, other, rejoinedHost],
+      allPlayers: [oldHost, peer, other, rejoinedHost],
+      readyPlayers: ['host-old', 'peer', 'other', 'host-new'],
+      lockedOutPlayers: ['host-old', 'peer'],
+      connectionStatuses: {
+        'host-old': 'connected',
+        peer: 'connected',
+        other: 'connected',
+        'host-new': 'connected',
+      },
+      hostId: 'peer',
+      summary: summary([oldHost, peer, other, rejoinedHost], 'peer'),
+      currentBuzzerId: 'host-old',
+    },
+    'peer',
+    1234,
+  );
+
+  assert.deepEqual(ids(update.players), ['peer', 'other', 'host-new']);
+  assert.equal(update.hostId, 'peer');
+  assert.deepEqual(update.removedPlayerIds, ['host-old']);
+  assert.equal(update.connectionStatuses['host-old'], 'disconnected');
+  assert.equal(update.allPlayers.find((p) => p.id === 'host-old').status, 'left');
+  assert.equal(update.summary.players.find((p) => p.id === 'host-old').status, 'left');
+  assert.deepEqual(update.readyPlayers, ['peer', 'other', 'host-new']);
+  assert.deepEqual(update.lockedOutPlayers, ['peer']);
+  assert.equal(update.wasActiveBuzzer, true);
+});
+
+test('authoritative player sync transfers host when current host is no longer present', () => {
+  const host = player('host', 'Host');
+  const peer = player('peer', 'Peer');
+
+  const update = buildAuthoritativePlayersUpdate(
+    [peer],
+    {
+      players: [host, peer],
+      allPlayers: [host, peer],
+      readyPlayers: ['host', 'peer'],
+      lockedOutPlayers: [],
+      connectionStatuses: { host: 'connected', peer: 'connected' },
+      hostId: 'host',
+      summary: summary([host, peer], 'host'),
+    },
+    'host',
+    1234,
+  );
+
+  assert.deepEqual(ids(update.players), ['peer']);
+  assert.equal(update.hostId, 'peer');
+  assert.equal(update.summary.hostId, 'peer');
+  assert.equal(update.summary.players.find((p) => p.id === 'host').status, 'left');
 });
 
 test('active player removal kicks a player out of active state and ready/lock lists', () => {

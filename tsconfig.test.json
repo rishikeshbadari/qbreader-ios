@@ -18,6 +18,7 @@
     "utils/directives.ts",
     "utils/difficulty.ts",
     "utils/matchHistory.ts",
+    "utils/multiplayerMembership.ts",
     "utils/multiplayerLobby.ts",
     "utils/multiplayerPlayers.ts",
     "utils/multiplayerPresence.ts",
